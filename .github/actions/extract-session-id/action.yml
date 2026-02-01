@@ -1,0 +1,12 @@
+name: Extract Codex session id
+description: Find the latest Codex session id from rollout files in the sessions directory.
+inputs:
+  sessions_dir:
+    description: Path to the Codex sessions directory
+    required: false
+outputs:
+  session_id:
+    description: Extracted session id (UUID) or empty string
+runs:
+  using: node20
+  main: index.js

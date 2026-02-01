@@ -133,60 +133,14 @@ jobs:
           fi
           codex_exit=${PIPESTATUS[0]}
           set -e
-
-          if [ -z "$session_id" ]; then
-            rollout_file=$(find "$session_dir" -type f -name 'rollout-*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}')
-            if [ -n "$rollout_file" ]; then
-              session_id=$(python3 - "$rollout_file" <<'PY'
-import json
-import re
-import sys
-
-path = sys.argv[1]
-uuid_re = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-
-def find_uuid(value):
-    if isinstance(value, str) and uuid_re.match(value):
-        return value
-    if isinstance(value, dict):
-        for v in value.values():
-            found = find_uuid(v)
-            if found:
-                return found
-    if isinstance(value, list):
-        for v in value:
-            found = find_uuid(v)
-            if found:
-                return found
-    return None
-
-with open(path, "r", encoding="utf-8") as handle:
-    for _ in range(10):
-        line = handle.readline()
-        if not line:
-            break
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        found = find_uuid(data)
-        if found:
-            print(found)
-            sys.exit(0)
-
-print("")
-PY
-)
-            fi
-          fi
-
-          if [ -z "$session_id" ]; then
-            echo "session_id=" >> "$GITHUB_OUTPUT"
-          else
-            echo "session_id=$session_id" >> "$GITHUB_OUTPUT"
-          fi
+          echo "session_id=$session_id" >> "$GITHUB_OUTPUT"
 
           echo "codex_exit=$codex_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Extract session id
+        id: extract
+        if: ${{ steps.codex.outputs.session_id == '' && !(inputs.comment_body != '' && steps.session.outputs.missing_session == 'true') }}
+        uses: ./.github/actions/extract-session-id
 
       - name: Comment on issue
         if: always()
@@ -197,11 +151,15 @@ PY
           CODEX_EXIT: ${{ steps.guard.outputs.codex_exit }}
           CODEX_SESSION_ID: ${{ steps.codex.outputs.session_id }}
           CODEX_CODEX_EXIT: ${{ steps.codex.outputs.codex_exit }}
+          EXTRACT_SESSION_ID: ${{ steps.extract.outputs.session_id }}
         shell: bash
         run: |
           set -euo pipefail
 
           session_id="${SESSION_ID:-$CODEX_SESSION_ID}"
+          if [ -z "$session_id" ]; then
+            session_id="$EXTRACT_SESSION_ID"
+          fi
           codex_exit="${CODEX_EXIT:-$CODEX_CODEX_EXIT}"
 
           status="success"
