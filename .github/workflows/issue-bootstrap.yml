@@ -229,20 +229,7 @@ jobs:
             exit 0
           fi
 
-          session_id=$(python - "$latest_session" <<'PY'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as handle:
-    for line in handle:
-        data = json.loads(line)
-        if data.get("type") == "session_meta":
-            print(data["payload"]["id"])
-            sys.exit(0)
-sys.exit(1)
-PY
-)
+          session_id=$(python -c $'import json,sys\npath=sys.argv[1]\nwith open(path, \"r\", encoding=\"utf-8\") as handle:\n    for line in handle:\n        data=json.loads(line)\n        if data.get(\"type\")==\"session_meta\":\n            print(data[\"payload\"][\"id\"])\n            raise SystemExit(0)\nraise SystemExit(1)\n' "$latest_session")
           if [ -n "$session_id" ]; then
             echo "$session_id" > "$CODEX_STATE_DIR/session_id.txt"
           fi
