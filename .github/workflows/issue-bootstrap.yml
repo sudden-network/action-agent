@@ -273,7 +273,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$CODEX_STATE_DIR/tmp" "$CODEX_STATE_DIR/TMP"
+          rm -rf "$CODEX_STATE_DIR/tmp"
 
       - name: Upload session artifact
         if: ${{ steps.codex.outcome == 'success' }}
