@@ -44,8 +44,42 @@ jobs:
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.28.0
 
+      - name: Resolve session id
+        id: session
+        if: ${{ inputs.comment_body != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          session_id=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/comments" --paginate \
+            --jq '[.[] | .body | capture("<!-- codex-worker-session-id: (?<id>[0-9a-fA-F-]{36}) -->")?.id] | last')
+          if [ "$session_id" = "null" ]; then
+            session_id=""
+          fi
+
+          if [ -z "$session_id" ]; then
+            echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "missing_session=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "session_id=$session_id" >> "$GITHUB_OUTPUT"
+
+      - name: Guard missing session id
+        id: guard
+        if: ${{ inputs.comment_body != '' && steps.session.outputs.missing_session == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "No session id found on issue; cannot resume. Start from the issue body or fix the marker." > /tmp/codex_output.txt
+          echo "session_id=" >> "$GITHUB_OUTPUT"
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+
       - name: Run Codex
         id: codex
+        if: ${{ !(inputs.comment_body != '' && steps.session.outputs.missing_session == 'true') }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ISSUE_TITLE: ${{ inputs.issue_title }}
@@ -53,7 +87,7 @@ jobs:
           COMMENT_BODY: ${{ inputs.comment_body }}
           MODEL: ${{ inputs.model }}
           REASONING_EFFORT: ${{ inputs.reasoning_effort }}
-          GH_TOKEN: ${{ github.token }}
+          SESSION_ID: ${{ steps.session.outputs.session_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -68,20 +102,7 @@ jobs:
           session_dir="$HOME/.codex/sessions"
           mkdir -p "$session_dir"
 
-          session_id=""
-          if [ -n "$COMMENT_BODY" ]; then
-            session_id=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/comments" --paginate \
-              --jq '[.[] | .body | capture("<!-- codex-worker-session-id: (?<id>[0-9a-fA-F-]{36}) -->")?.id] | last')
-            if [ "$session_id" = "null" ]; then
-              session_id=""
-            fi
-            if [ -z "$session_id" ]; then
-              echo "No session id found on issue; cannot resume. Start from the issue body or fix the marker." > /tmp/codex_output.txt
-              echo "session_id=" >> "$GITHUB_OUTPUT"
-              echo "codex_exit=1" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
+          session_id="${SESSION_ID:-}"
 
           prompt_file=$(mktemp)
           if [ -n "$COMMENT_BODY" ]; then
@@ -135,15 +156,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
-          SESSION_ID: ${{ steps.codex.outputs.session_id }}
-          CODEX_EXIT: ${{ steps.codex.outputs.codex_exit }}
+          SESSION_ID: ${{ steps.guard.outputs.session_id }}
+          CODEX_EXIT: ${{ steps.guard.outputs.codex_exit }}
+          CODEX_SESSION_ID: ${{ steps.codex.outputs.session_id }}
+          CODEX_CODEX_EXIT: ${{ steps.codex.outputs.codex_exit }}
         shell: bash
         run: |
           set -euo pipefail
 
+          session_id="${SESSION_ID:-$CODEX_SESSION_ID}"
+          codex_exit="${CODEX_EXIT:-$CODEX_CODEX_EXIT}"
+
           status="success"
-          if [ -n "$CODEX_EXIT" ] && [ "$CODEX_EXIT" -ne 0 ]; then
-            status="failed (exit $CODEX_EXIT)"
+          if [ -n "$codex_exit" ] && [ "$codex_exit" -ne 0 ]; then
+            status="failed (exit $codex_exit)"
           fi
 
           response_file=/tmp/codex_output.txt
@@ -152,8 +178,8 @@ jobs:
           fi
 
           comment_body_file=$(mktemp)
-          if [ -n "$SESSION_ID" ]; then
-            echo "<!-- codex-worker-session-id: $SESSION_ID -->" >> "$comment_body_file"
+          if [ -n "$session_id" ]; then
+            echo "<!-- codex-worker-session-id: $session_id -->" >> "$comment_body_file"
           fi
           echo "**Codex Worker** response ($status)" >> "$comment_body_file"
           echo >> "$comment_body_file"
