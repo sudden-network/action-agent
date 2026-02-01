@@ -12,6 +12,9 @@ on:
       issue_body:
         type: string
         required: false
+      comment_body:
+        type: string
+        required: false
     secrets:
       OPENAI_API_KEY:
         required: true
@@ -41,6 +44,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
+          COMMENT_BODY: ${{ inputs.comment_body }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -50,27 +55,51 @@ jobs:
           session_dir="$HOME/.codex/sessions"
           mkdir -p "$session_dir"
 
-          before=$(ls -1 "$session_dir" 2>/dev/null || true)
+          session_id=""
+          if [ -n "$COMMENT_BODY" ]; then
+            session_id=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/comments" --paginate \
+              --jq '[.[] | .body | capture("<!-- codex-worker-session-id: (?<id>[^ ]+) -->")?.id] | last')
+            if [ "$session_id" = "null" ]; then
+              session_id=""
+            fi
+          else
+            before=$(ls -1 "$session_dir" 2>/dev/null || true)
+          fi
 
           prompt_file=$(mktemp)
-          {
-            echo "# Issue"
-            echo "Title: $ISSUE_TITLE"
-            echo
-            echo "Body:"
-            echo "$ISSUE_BODY"
-          } > "$prompt_file"
+          if [ -n "$COMMENT_BODY" ]; then
+            printf '%s\n' "$COMMENT_BODY" > "$prompt_file"
+          else
+            {
+              echo "# Issue"
+              echo "Title: $ISSUE_TITLE"
+              echo
+              echo "Body:"
+              echo "$ISSUE_BODY"
+            } > "$prompt_file"
+          fi
 
-          set +e
-          codex exec "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
-          codex_exit=${PIPESTATUS[0]}
-          set -e
+          if [ -n "$COMMENT_BODY" ] && [ -z "$session_id" ]; then
+            echo "No session id found on issue; cannot resume." > /tmp/codex_output.txt
+            codex_exit=1
+          else
+            set +e
+            if [ -n "$session_id" ]; then
+              codex exec resume "$session_id" "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
+            else
+              codex exec "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
+            fi
+            codex_exit=${PIPESTATUS[0]}
+            set -e
+          fi
 
-          after=$(ls -1 "$session_dir" 2>/dev/null || true)
-
-          session_id=$(comm -13 <(printf '%s\n' "$before" | sort) <(printf '%s\n' "$after" | sort) | head -n 1)
           if [ -z "$session_id" ]; then
-            session_id=$(ls -t "$session_dir" 2>/dev/null | head -n 1)
+            after=$(ls -1 "$session_dir" 2>/dev/null || true)
+
+            session_id=$(comm -13 <(printf '%s\n' "$before" | sort) <(printf '%s\n' "$after" | sort) | head -n 1)
+            if [ -z "$session_id" ]; then
+              session_id=$(ls -t "$session_dir" 2>/dev/null | head -n 1)
+            fi
           fi
 
           if [ -z "$session_id" ]; then

@@ -101,6 +101,7 @@ Reusable workflow with these phases:
 
 - `issue_comment` fires for both issues and PRs; guard with `github.event.issue.pull_request`.
 - For the bootstrap flow, use `issues` events and ignore non-task issue types by label or title prefix.
+- Ignore bot-authored comments to avoid workflow comment loops.
 - Reusable workflow permissions are inherited from the caller; they cannot be elevated in the worker repo.
 - Concurrency group ordering is not guaranteed; pending runs can be replaced.
 - Artifact retention is configurable with `retention-days` but capped by org/repo policy.
