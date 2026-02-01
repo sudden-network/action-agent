@@ -45,7 +45,7 @@ Yes. GitHub Actions can host Codex CLI runs, trigger them manually or from PR co
 ### 5) Secrets + auth for Codex
 
 - **Need**: Secure auth in GitHub-hosted runners.
-- **Implement**: Use repo secrets + env vars. Codex caches auth in `~/.codex/auth.json` (or OS keyring). Treat the file as sensitive. Device-code login exists for headless envs (`codex login --device-auth`). Optionally force file-based storage via `cli_auth_credentials_store` so auth can be carried in an artifact.
+- **Implement**: Use org/environment secrets with `secrets: inherit` in the caller workflow so the worker can read `OPENAI_API_KEY` without per-repo wiring. Codex caches auth in `~/.codex/auth.json` (or OS keyring). Treat the file as sensitive. Device-code login exists for headless envs (`codex login --device-auth`). Optionally force file-based storage via `cli_auth_credentials_store` so auth can be carried in an artifact.
 - **Refs**: Codex auth docs.
 
 ### 6) Concurrency + queuing
