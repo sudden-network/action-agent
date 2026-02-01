@@ -50,31 +50,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/.codex/sessions"
 
-      - name: Resolve session id
-        id: session
-        if: ${{ inputs.comment_body != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          session_id=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/comments" --paginate \
-            --jq '[.[] | select(.user.login == "github-actions[bot]") | .body | capture("<!-- codex-worker-session-id: (?<id>[0-9a-fA-F-]{36}) -->")?.id] | last')
-          if [ "$session_id" = "null" ]; then
-            session_id=""
-          fi
-
-          if [ -z "$session_id" ]; then
-            echo "missing_session=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "missing_session=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "session_id=$session_id" >> "$GITHUB_OUTPUT"
-
       - name: Download session artifact
         id: download_session
-        if: ${{ inputs.comment_body != '' && steps.session.outputs.missing_session == 'false' }}
+        if: ${{ inputs.comment_body != '' }}
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -88,13 +66,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ steps.session.outputs.missing_session }}" = "true" ]; then
-            echo "missing_session=true" >> "$GITHUB_OUTPUT"
-            echo "No session id found on issue; cannot resume. Start from the issue body or fix the marker." > /tmp/codex_output.txt
-            echo "codex_exit=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           if [ "${{ steps.download_session.outcome }}" != "success" ]; then
             echo "missing_session=true" >> "$GITHUB_OUTPUT"
             echo "Session artifact not found; cannot resume." > /tmp/codex_output.txt
@@ -102,10 +73,9 @@ jobs:
             exit 0
           fi
 
-          session_id="${{ steps.session.outputs.session_id }}"
           src="${{ runner.temp }}/codex-session"
-          if [ -d "$src/$session_id" ]; then
-            src="$src/$session_id"
+          if [ -d "$src/sessions" ]; then
+            src="$src/sessions"
           fi
 
           if [ ! -d "$src" ]; then
@@ -115,12 +85,11 @@ jobs:
             exit 0
           fi
 
-          dest="$HOME/.codex/sessions/$session_id"
+          dest="$HOME/.codex/sessions"
           mkdir -p "$dest"
           cp -a "$src/." "$dest/"
 
           echo "missing_session=false" >> "$GITHUB_OUTPUT"
-          echo "session_id=$session_id" >> "$GITHUB_OUTPUT"
 
       - name: Run Codex
         id: codex
@@ -132,7 +101,6 @@ jobs:
           COMMENT_BODY: ${{ inputs.comment_body }}
           MODEL: ${{ inputs.model }}
           REASONING_EFFORT: ${{ inputs.reasoning_effort }}
-          SESSION_ID: ${{ steps.restore.outputs.session_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -150,8 +118,6 @@ jobs:
 
           session_dir="$HOME/.codex/sessions"
           mkdir -p "$session_dir"
-
-          session_id="${SESSION_ID:-}"
 
           prompt_file=$(mktemp)
           if [ -n "$COMMENT_BODY" ]; then
@@ -175,17 +141,15 @@ jobs:
             codex_args+=(-c "model_reasoning_effort=$REASONING_EFFORT")
           fi
 
-          if [ -n "$session_id" ]; then
-            codex exec "${codex_args[@]}" resume "$session_id" "$(cat "$prompt_file")" 2>&1 | tee /tmp/codex_output.txt
+          if [ -n "$COMMENT_BODY" ]; then
+            codex exec "${codex_args[@]}" resume "$(cat "$prompt_file")" 2>&1 | tee /tmp/codex_output.txt
           else
             codex exec "${codex_args[@]}" "$(cat "$prompt_file")" 2>&1 | tee /tmp/codex_output.txt
           fi
           codex_exit=${PIPESTATUS[0]}
           set -e
 
-          if [ -z "$session_id" ]; then
-            session_id=$(grep -Eo 'session id: [0-9a-fA-F-]{36}' /tmp/codex_output.txt | tail -n 1 | awk '{print $3}')
-          fi
+          session_id=$(grep -Eo 'session id: [0-9a-fA-F-]{36}' /tmp/codex_output.txt | tail -n 1 | awk '{print $3}')
 
           if [ -z "$session_id" ]; then
             echo "session_id=" >> "$GITHUB_OUTPUT"
@@ -203,7 +167,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-worker-session-${{ inputs.issue_number }}
-          path: $HOME/.codex/sessions/${{ steps.codex.outputs.session_id }}
+          path: $HOME/.codex/sessions
           retention-days: 7
           overwrite: true
           if-no-files-found: error
@@ -213,7 +177,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
-          SESSION_ID: ${{ steps.restore.outputs.session_id }}
           CODEX_EXIT: ${{ steps.restore.outputs.codex_exit }}
           CODEX_SESSION_ID: ${{ steps.codex.outputs.session_id }}
           CODEX_CODEX_EXIT: ${{ steps.codex.outputs.codex_exit }}
@@ -221,7 +184,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          session_id="${SESSION_ID:-$CODEX_SESSION_ID}"
+          session_id="${CODEX_SESSION_ID:-}"
           codex_exit="${CODEX_EXIT:-$CODEX_CODEX_EXIT}"
 
           status="success"
