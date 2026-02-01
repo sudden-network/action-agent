@@ -12,10 +12,19 @@ on:
       issue_body:
         type: string
         required: false
+      issue_html_url:
+        type: string
+        required: false
       comment_body:
         type: string
         required: false
       comment_id:
+        type: string
+        required: false
+      comment_html_url:
+        type: string
+        required: false
+      event_action:
         type: string
         required: false
       model:
@@ -82,7 +91,7 @@ jobs:
 
       - name: Find session artifact
         id: find_artifact
-        if: ${{ inputs.comment_body != '' }}
+        if: ${{ inputs.comment_body != '' || inputs.event_action == 'edited' }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -112,7 +121,7 @@ jobs:
 
       - name: Download session artifact
         id: download_session
-        if: ${{ inputs.comment_body != '' && steps.find_artifact.outputs.missing_session == 'false' }}
+        if: ${{ (inputs.comment_body != '' || inputs.event_action == 'edited') && steps.find_artifact.outputs.missing_session == 'false' }}
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -124,7 +133,7 @@ jobs:
 
       - name: Restore session artifact
         id: restore
-        if: ${{ inputs.comment_body != '' }}
+        if: ${{ inputs.comment_body != '' || inputs.event_action == 'edited' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -168,33 +177,47 @@ jobs:
 
       - name: Prepare prompt
         id: prompt
-        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') }}
+        if: ${{ steps.login.outputs.missing_auth != 'true' && !((inputs.comment_body != '' || inputs.event_action == 'edited') && steps.restore.outputs.missing_session == 'true') }}
         env:
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
+          ISSUE_HTML_URL: ${{ inputs.issue_html_url }}
           COMMENT_BODY: ${{ inputs.comment_body }}
+          COMMENT_HTML_URL: ${{ inputs.comment_html_url }}
+          EVENT_ACTION: ${{ inputs.event_action }}
         shell: bash
         run: |
           set -euo pipefail
 
           prompt_file=$(mktemp)
+          resume_mode=false
           if [ -n "$COMMENT_BODY" ]; then
-            printf '%s\n' "$COMMENT_BODY" > "$prompt_file"
+            if [ "$EVENT_ACTION" = "edited" ] && [ -n "$COMMENT_HTML_URL" ]; then
+              echo "Edited comment: $COMMENT_HTML_URL" > "$prompt_file"
+              echo "Respond to the updated content and continue the existing thread." >> "$prompt_file"
+              echo >> "$prompt_file"
+            fi
+            printf '%s\n' "$COMMENT_BODY" >> "$prompt_file"
+            resume_mode=true
           else
-            if ! PROMPT_FILE="$prompt_file" python -c $'import os\nfrom pathlib import Path\n\noutput_path=Path(os.environ[\"PROMPT_FILE\"])\n\ntemplate = \"\"\"# Codex Worker: Issue Bootstrap\\n\\nYou are running inside a GitHub Actions workflow triggered by a new issue.\\n\\nContext:\\n- The repository for the issue is already checked out in the workspace.\\n- Your response will be posted as a comment on the issue.\\n- The comment will be rendered as GitHub-flavored Markdown.\\n\\nInstructions:\\n- Read the issue title and description below.\\n- Answer in Markdown.\\n- Be concise and actionable.\\n- If you need literal backticks inline, escape them (e.g., \\\\\\`\\\\\\`\\\\\\`).\\n- Put code snippets in fenced code blocks on their own lines.\\n\\nIssue title:\\n{{ISSUE_TITLE}}\\n\\nIssue description:\\n{{ISSUE_BODY}}\\n\"\"\"\n\nreplacements={\n    \"{{ISSUE_TITLE}}\": os.environ.get(\"ISSUE_TITLE\", \"\"),\n    \"{{ISSUE_BODY}}\": os.environ.get(\"ISSUE_BODY\", \"\"),\n}\nfor key, value in replacements.items():\n    template = template.replace(key, value)\n\noutput_path.write_text(template, encoding=\"utf-8\")\n'; then
+            if ! PROMPT_FILE="$prompt_file" python -c $'import os\nfrom pathlib import Path\n\noutput_path=Path(os.environ[\"PROMPT_FILE\"])\n\ntemplate = \"\"\"# Codex Worker: Issue Bootstrap\\n\\nYou are running inside a GitHub Actions workflow triggered by a new issue.\\n\\nContext:\\n- The repository for the issue is already checked out in the workspace.\\n- Your response will be posted as a comment on the issue.\\n- The comment will be rendered as GitHub-flavored Markdown.\\n\\nInstructions:\\n- Read the issue title and description below.\\n- Answer in Markdown.\\n- Be concise and actionable.\\n- If you need literal backticks inline, escape them (e.g., \\\\\\`\\\\\\`\\\\\\`).\\n- Put code snippets in fenced code blocks on their own lines.\\n\\n{{EDIT_CONTEXT}}\\nIssue title:\\n{{ISSUE_TITLE}}\\n\\nIssue description:\\n{{ISSUE_BODY}}\\n\"\"\"\n\nedit_context=\"\"\nif os.environ.get(\"EVENT_ACTION\")==\"edited\":\n    issue_url=os.environ.get(\"ISSUE_HTML_URL\", \"\")\n    if issue_url:\n        edit_context=f\"Issue updated: {issue_url}\\n\\nContinue the existing thread; do not restart.\\n\\n\"\n    else:\n        edit_context=\"Issue updated. Continue the existing thread; do not restart.\\n\\n\"\n\nreplacements={\n    \"{{ISSUE_TITLE}}\": os.environ.get(\"ISSUE_TITLE\", \"\"),\n    \"{{ISSUE_BODY}}\": os.environ.get(\"ISSUE_BODY\", \"\"),\n    \"{{EDIT_CONTEXT}}\": edit_context,\n}\nfor key, value in replacements.items():\n    template = template.replace(key, value)\n\noutput_path.write_text(template, encoding=\"utf-8\")\n'; then
               echo "Failed to build issue prompt." > /tmp/codex_output.txt
               echo "codex_exit=1" >> "$GITHUB_OUTPUT"
               echo "prompt_ready=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            if [ "$EVENT_ACTION" = "edited" ]; then
+              resume_mode=true
+            fi
           fi
 
           echo "prompt_file=$prompt_file" >> "$GITHUB_OUTPUT"
           echo "prompt_ready=true" >> "$GITHUB_OUTPUT"
+          echo "resume_mode=$resume_mode" >> "$GITHUB_OUTPUT"
 
       - name: Run Codex
         id: codex
-        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') && steps.prompt.outputs.prompt_ready == 'true' }}
+        if: ${{ steps.login.outputs.missing_auth != 'true' && !((inputs.comment_body != '' || inputs.event_action == 'edited') && steps.restore.outputs.missing_session == 'true') && steps.prompt.outputs.prompt_ready == 'true' }}
         env:
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
@@ -298,6 +321,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
+          ISSUE_HTML_URL: ${{ inputs.issue_html_url }}
+          COMMENT_HTML_URL: ${{ inputs.comment_html_url }}
+          EVENT_ACTION: ${{ inputs.event_action }}
           FIND_CODEX_EXIT: ${{ steps.find_artifact.outputs.codex_exit }}
           LOGIN_CODEX_EXIT: ${{ steps.login.outputs.codex_exit }}
           PROMPT_CODEX_EXIT: ${{ steps.prompt.outputs.codex_exit }}
@@ -309,22 +335,38 @@ jobs:
 
           codex_exit="${PROMPT_CODEX_EXIT:-${RESTORE_CODEX_EXIT:-${FIND_CODEX_EXIT:-${LOGIN_CODEX_EXIT:-$CODEX_CODEX_EXIT}}}}"
 
+          header=""
+          if [ "$EVENT_ACTION" = "edited" ]; then
+            if [ -n "$COMMENT_HTML_URL" ]; then
+              header="Edited comment: $COMMENT_HTML_URL\n\n"
+            elif [ -n "$ISSUE_HTML_URL" ]; then
+              header="Issue updated: $ISSUE_HTML_URL\n\n"
+            else
+              header="Issue updated.\n\n"
+            fi
+          fi
+
           gh api \
             --method POST \
             "repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments" \
             -f body="$(
               if [ -n "$codex_exit" ] && [ "$codex_exit" -ne 0 ]; then
                 if [ -f /tmp/codex_output.txt ]; then
+                  printf \"%s\" \"$header\"
                   cat /tmp/codex_output.txt
                 else
+                  printf \"%s\" \"$header\"
                   echo "(no output)"
                 fi
               else
                 if [ -f /tmp/codex_response.txt ]; then
+                  printf \"%s\" \"$header\"
                   cat /tmp/codex_response.txt
                 elif [ -f /tmp/codex_output.txt ]; then
+                  printf \"%s\" \"$header\"
                   cat /tmp/codex_output.txt
                 else
+                  printf \"%s\" \"$header\"
                   echo "(no output)"
                 fi
               fi
