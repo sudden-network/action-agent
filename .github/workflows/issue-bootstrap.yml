@@ -42,6 +42,7 @@ jobs:
         id: codex
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
           COMMENT_BODY: ${{ inputs.comment_body }}
@@ -50,14 +51,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "$OPENAI_API_KEY" ]; then
+          if [ -z "$CODEX_API_KEY" ]; then
             echo "OPENAI_API_KEY is missing. Add it as a repo/org secret." > /tmp/codex_output.txt
             echo "session_id=" >> "$GITHUB_OUTPUT"
             echo "codex_exit=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          codex login --api-key "$OPENAI_API_KEY"
 
           session_dir="$HOME/.codex/sessions"
           mkdir -p "$session_dir"
