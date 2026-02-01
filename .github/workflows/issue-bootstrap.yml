@@ -32,7 +32,7 @@ permissions:
 
 concurrency:
   group: ${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('issue-{0}', github.event.issue.number) }}
-  cancel-in-progress: ${{ github.event_name == 'issue_comment' }}
+  cancel-in-progress: ${{ github.event_name == 'issue_comment' || github.event_name == 'issues' }}
 
 jobs:
   run:
