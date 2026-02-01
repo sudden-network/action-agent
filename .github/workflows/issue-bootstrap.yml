@@ -64,12 +64,10 @@ jobs:
           session_id=""
           if [ -n "$COMMENT_BODY" ]; then
             session_id=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/comments" --paginate \
-              --jq '[.[] | .body | capture("<!-- codex-worker-session-id: (?<id>[^ ]+) -->")?.id] | last')
+              --jq '[.[] | .body | capture("<!-- codex-worker-session-id: (?<id>[0-9a-fA-F-]{36}) -->")?.id] | last')
             if [ "$session_id" = "null" ]; then
               session_id=""
             fi
-          else
-            before=$(ls -1 "$session_dir" 2>/dev/null || true)
           fi
 
           prompt_file=$(mktemp)
@@ -85,26 +83,21 @@ jobs:
             } > "$prompt_file"
           fi
 
-          if [ -n "$COMMENT_BODY" ] && [ -z "$session_id" ]; then
-            echo "No session id found on issue; cannot resume." > /tmp/codex_output.txt
-            codex_exit=1
+          set +e
+          if [ -n "$session_id" ]; then
+            codex exec resume "$session_id" "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
           else
-            set +e
-            if [ -n "$session_id" ]; then
-              codex exec resume "$session_id" "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
-            else
-              codex exec "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
-            fi
-            codex_exit=${PIPESTATUS[0]}
-            set -e
+            codex exec "$(cat "$prompt_file")" | tee /tmp/codex_output.txt
           fi
+          codex_exit=${PIPESTATUS[0]}
+          set -e
 
           if [ -z "$session_id" ]; then
-            after=$(ls -1 "$session_dir" 2>/dev/null || true)
-
-            session_id=$(comm -13 <(printf '%s\n' "$before" | sort) <(printf '%s\n' "$after" | sort) | head -n 1)
-            if [ -z "$session_id" ]; then
-              session_id=$(ls -t "$session_dir" 2>/dev/null | head -n 1)
+            session_id=$(find "$session_dir" -type d -regextype posix-extended \
+              -regex '.*/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' \
+              -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}' | xargs -n1 basename)
+            if [ "$session_id" = "null" ]; then
+              session_id=""
             fi
           fi
 
