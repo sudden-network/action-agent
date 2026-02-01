@@ -352,21 +352,21 @@ jobs:
             -f body="$(
               if [ -n "$codex_exit" ] && [ "$codex_exit" -ne 0 ]; then
                 if [ -f /tmp/codex_output.txt ]; then
-                  printf \"%s\" \"$header\"
+                  printf "%s" "$header"
                   cat /tmp/codex_output.txt
                 else
-                  printf \"%s\" \"$header\"
+                  printf "%s" "$header"
                   echo "(no output)"
                 fi
               else
                 if [ -f /tmp/codex_response.txt ]; then
-                  printf \"%s\" \"$header\"
+                  printf "%s" "$header"
                   cat /tmp/codex_response.txt
                 elif [ -f /tmp/codex_output.txt ]; then
-                  printf \"%s\" \"$header\"
+                  printf "%s" "$header"
                   cat /tmp/codex_output.txt
                 else
-                  printf \"%s\" \"$header\"
+                  printf "%s" "$header"
                   echo "(no output)"
                 fi
               fi
