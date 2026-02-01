@@ -24,10 +24,6 @@ permissions:
   issues: write
   actions: read
 
-concurrency:
-  group: ${{ format('issue-{0}', inputs.issue_number) }}
-  cancel-in-progress: false
-
 jobs:
   run:
     runs-on: ubuntu-latest
