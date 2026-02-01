@@ -18,6 +18,9 @@ on:
       comment_id:
         type: string
         required: false
+      comment_updated_at:
+        type: string
+        required: false
       model:
         type: string
         required: false
@@ -41,6 +44,31 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      - name: Check comment freshness
+        id: comment_fresh
+        if: ${{ inputs.comment_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ inputs.comment_id }}
+          COMMENT_UPDATED_AT: ${{ inputs.comment_updated_at }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$COMMENT_UPDATED_AT" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest_updated_at=$(gh api "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" --jq '.updated_at')
+          if [ "$latest_updated_at" != "$COMMENT_UPDATED_AT" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "Comment was edited again; skipping stale run." > /tmp/codex_output.txt
+            exit 0
+          fi
+
+          echo "stale=false" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -168,7 +196,7 @@ jobs:
 
       - name: Prepare prompt
         id: prompt
-        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') }}
+        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') && steps.comment_fresh.outputs.stale != 'true' }}
         env:
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
@@ -194,7 +222,7 @@ jobs:
 
       - name: Run Codex
         id: codex
-        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') && steps.prompt.outputs.prompt_ready == 'true' }}
+        if: ${{ steps.login.outputs.missing_auth != 'true' && !(inputs.comment_body != '' && steps.restore.outputs.missing_session == 'true') && steps.prompt.outputs.prompt_ready == 'true' && steps.comment_fresh.outputs.stale != 'true' }}
         env:
           ISSUE_TITLE: ${{ inputs.issue_title }}
           ISSUE_BODY: ${{ inputs.issue_body }}
@@ -294,7 +322,7 @@ jobs:
           include-hidden-files: true
 
       - name: Comment on issue
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.comment_fresh.outputs.stale != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
