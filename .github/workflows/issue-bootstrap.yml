@@ -153,20 +153,10 @@ jobs:
 
       - name: Upload session artifact
         if: ${{ steps.codex.outcome == 'success' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          dest="${{ runner.temp }}/codex-sessions"
-          mkdir -p "$dest"
-          cp -a "$HOME/.codex/sessions/." "$dest/"
-
-      - name: Publish session artifact
-        if: ${{ steps.codex.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: codex-worker-session-${{ inputs.issue_number }}
-          path: ${{ runner.temp }}/codex-sessions
+          path: ${{ env.HOME }}/.codex/sessions
           retention-days: 7
           overwrite: true
           if-no-files-found: error
