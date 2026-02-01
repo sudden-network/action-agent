@@ -55,27 +55,6 @@ jobs:
           echo "CODEX_STATE_DIR=$codex_home" >> "$GITHUB_ENV"
           echo "CODEX_SESSIONS_PATH=$codex_home/sessions" >> "$GITHUB_ENV"
 
-      - name: Resolve worker repo for prompts
-        id: worker_repo
-        if: ${{ inputs.comment_body == '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          workflow_ref="${{ github.workflow_ref }}"
-          worker_repo="${workflow_ref%%/.github/workflows/*}"
-          worker_ref="${workflow_ref##*@}"
-          echo "repo=$worker_repo" >> "$GITHUB_OUTPUT"
-          echo "ref=$worker_ref" >> "$GITHUB_OUTPUT"
-          echo "WORKER_PROMPTS_DIR=$RUNNER_TEMP/codex-worker" >> "$GITHUB_ENV"
-
-      - name: Checkout worker prompts
-        if: ${{ inputs.comment_body == '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ steps.worker_repo.outputs.repo }}
-          ref: ${{ steps.worker_repo.outputs.ref }}
-          path: ${{ runner.temp }}/codex-worker
-
       - name: Codex login
         id: login
         env:
@@ -197,14 +176,9 @@ jobs:
           if [ -n "$COMMENT_BODY" ]; then
             printf '%s\n' "$COMMENT_BODY" > "$prompt_file"
           else
-            template_file="$WORKER_PROMPTS_DIR/.github/prompts/issue-bootstrap.md"
-            if [ ! -f "$template_file" ]; then
-              echo "Issue bootstrap prompt template missing." > /tmp/codex_output.txt
-              echo "codex_exit=1" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+            template_file=".github/prompts/issue-bootstrap.md"
 
-            python -c $'import os\nfrom pathlib import Path\n\ntemplate_path=Path(os.environ[\"TEMPLATE_FILE\"])\noutput_path=Path(os.environ[\"PROMPT_FILE\"])\n\ntemplate=template_path.read_text(encoding=\"utf-8\")\nreplacements={\n    \"{{ISSUE_TITLE}}\": os.environ.get(\"ISSUE_TITLE\", \"\"),\n    \"{{ISSUE_BODY}}\": os.environ.get(\"ISSUE_BODY\", \"\"),\n}\nfor key, value in replacements.items():\n    template = template.replace(key, value)\n\noutput_path.write_text(template, encoding=\"utf-8\")\n' TEMPLATE_FILE="$template_file" PROMPT_FILE="$prompt_file"
+            python -c $'import os\nfrom pathlib import Path\n\noutput_path=Path(os.environ[\"PROMPT_FILE\"])\n\nif Path(os.environ[\"TEMPLATE_FILE\"]).is_file():\n    template=Path(os.environ[\"TEMPLATE_FILE\"]).read_text(encoding=\"utf-8\")\nelse:\n    template = \"\"\"# Codex Worker: Issue Bootstrap\\n\\nYou are running inside a GitHub Actions workflow triggered by a new issue.\\n\\nContext:\\n- The repository for the issue is already checked out in the workspace.\\n- Your response will be posted as a comment on the issue.\\n\\nInstructions:\\n- Read the issue title and description below.\\n- Answer in Markdown.\\n- Be concise and actionable.\\n\\nIssue title:\\n{{ISSUE_TITLE}}\\n\\nIssue description:\\n{{ISSUE_BODY}}\\n\"\"\"\n\nreplacements={\n    \"{{ISSUE_TITLE}}\": os.environ.get(\"ISSUE_TITLE\", \"\"),\n    \"{{ISSUE_BODY}}\": os.environ.get(\"ISSUE_BODY\", \"\"),\n}\nfor key, value in replacements.items():\n    template = template.replace(key, value)\n\noutput_path.write_text(template, encoding=\"utf-8\")\n' TEMPLATE_FILE="$template_file" PROMPT_FILE="$prompt_file"
           fi
 
           set +e
