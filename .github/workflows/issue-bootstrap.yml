@@ -99,6 +99,10 @@ jobs:
             exit 0
           fi
 
+          mkdir -p "$HOME/.codex"
+
+          codex login --api-key "$OPENAI_API_KEY"
+
           session_dir="$HOME/.codex/sessions"
           mkdir -p "$session_dir"
 
