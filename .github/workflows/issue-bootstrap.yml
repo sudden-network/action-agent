@@ -237,30 +237,7 @@ jobs:
             exit 0
           fi
 
-          if ! python - <<'PY'
-import json
-from pathlib import Path
-
-output_path = Path("/tmp/codex_output.txt")
-response_path = Path("/tmp/codex_response.txt")
-
-response = ""
-with output_path.open("r", encoding="utf-8") as handle:
-    for line in handle:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            raise SystemExit(1)
-        if event.get("type") == "item.completed":
-            item = event.get("item") or {}
-            if item.get("type") == "agent_message":
-                response = item.get("text") or ""
-
-response_path.write_text(response, encoding="utf-8")
-PY
+          if ! python -c $'import json\nfrom pathlib import Path\noutput_path=Path(\"/tmp/codex_output.txt\")\nresponse_path=Path(\"/tmp/codex_response.txt\")\nresponse=\"\"\nwith output_path.open(\"r\", encoding=\"utf-8\") as handle:\n    for line in handle:\n        line=line.strip()\n        if not line:\n            continue\n        try:\n            event=json.loads(line)\n        except json.JSONDecodeError:\n            raise SystemExit(1)\n        if event.get(\"type\")==\"item.completed\":\n            item=event.get(\"item\") or {}\n            if item.get(\"type\")==\"agent_message\":\n                response=item.get(\"text\") or \"\"\nresponse_path.write_text(response, encoding=\"utf-8\")'
           then
             cp "$output_file" "$response_file"
           fi
