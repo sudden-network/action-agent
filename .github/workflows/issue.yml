@@ -295,6 +295,7 @@ jobs:
           MODEL: ${{ inputs.model }}
           REASONING_EFFORT: ${{ inputs.reasoning_effort }}
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -302,7 +303,7 @@ jobs:
           prompt_file="${{ steps.prompt.outputs.prompt_file }}"
 
           set +e
-          codex_args=(--sandbox workspace-write -c "approval_policy=\"never\"" -c "sandbox_workspace_write.network_access=true")
+          codex_args=(--sandbox workspace-write -c "approval_policy=\"never\"" -c "sandbox_workspace_write.network_access=true" -c "shell_environment_policy.inherit=all")
           if [ -n "$MODEL" ]; then
             codex_args+=(--model "$MODEL")
           fi
