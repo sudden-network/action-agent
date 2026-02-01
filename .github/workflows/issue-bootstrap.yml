@@ -79,15 +79,19 @@ jobs:
           stale=false
 
           if [ -n "${{ inputs.comment_id }}" ]; then
-            current_updated_at=$(gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.updated_at // ""')
-            event_updated_at="${{ github.event.comment.updated_at }}"
+            current_body=$(gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.body // ""')
+            event_body="${{ github.event.comment.body }}"
+            if [ "$current_body" != "$event_body" ]; then
+              stale=true
+            fi
           else
-            current_updated_at=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.updated_at // ""')
-            event_updated_at="${{ github.event.issue.updated_at }}"
-          fi
-
-          if [ -n "$event_updated_at" ] && [ "$current_updated_at" != "$event_updated_at" ]; then
-            stale=true
+            current_title=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.title // ""')
+            current_body=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.body // ""')
+            event_title="${{ github.event.issue.title }}"
+            event_body="${{ github.event.issue.body }}"
+            if [ "$current_title" != "$event_title" ] || [ "$current_body" != "$event_body" ]; then
+              stale=true
+            fi
           fi
 
           echo "stale=$stale" >> "$GITHUB_OUTPUT"
