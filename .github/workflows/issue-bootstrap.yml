@@ -30,6 +30,10 @@ permissions:
   issues: write
   actions: read
 
+concurrency:
+  group: ${{ github.event_name == 'issue_comment' && format('comment-{0}', github.event.comment.id) || format('issue-{0}', github.event.issue.number) }}
+  cancel-in-progress: ${{ github.event_name == 'issue_comment' }}
+
 jobs:
   run:
     runs-on: ubuntu-latest
