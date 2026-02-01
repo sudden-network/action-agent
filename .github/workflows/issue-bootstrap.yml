@@ -338,11 +338,11 @@ jobs:
           header=""
           if [ "$EVENT_ACTION" = "edited" ]; then
             if [ -n "$COMMENT_HTML_URL" ]; then
-              header="Edited comment: $COMMENT_HTML_URL\n\n"
+              printf -v header "Edited comment: %s\n\n" "$COMMENT_HTML_URL"
             elif [ -n "$ISSUE_HTML_URL" ]; then
-              header="Issue updated: $ISSUE_HTML_URL\n\n"
+              printf -v header "Issue updated: %s\n\n" "$ISSUE_HTML_URL"
             else
-              header="Issue updated.\n\n"
+              header=$'Issue updated.\n\n'
             fi
           fi
 
