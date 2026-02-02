@@ -1,4 +1,4 @@
-# Codex Worker
+# ActionAgent
 
 GitHub Action (Node) that runs Codex CLI from issues and issue comments.
 
@@ -28,10 +28,10 @@ GitHub Action (Node) that runs Codex CLI from issues and issue comments.
 
 ## Quick start (caller workflow)
 
-Create a workflow in the target repo, e.g. `.github/workflows/codex-worker-issue.yml`:
+Create a workflow in the target repo, e.g. `.github/workflows/action-agent-issue.yml`:
 
 ```yaml
-name: Codex Worker Issue
+name: ActionAgent Issue
 
 on:
   issues:
@@ -46,7 +46,7 @@ permissions:
   actions: read
 
 jobs:
-  codex-worker:
+  action-agent:
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ format('issue-{0}', github.event.issue.number) }}
@@ -60,8 +60,8 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Run Codex Worker
-        uses: etienne-martin/codex-worker/.github/actions/codex-worker@main
+      - name: Run ActionAgent
+        uses: etienne-martin/ActionAgent/.github/actions/action-agent@main
         with:
           issue_number: ${{ github.event.issue.number }}
           comment_id: ${{ github.event.comment.id || '' }}
@@ -80,5 +80,5 @@ jobs:
 
 ## Files
 
-- `/.github/actions/codex-worker/action.yml` — Node action entry point.
+- `/.github/actions/action-agent/action.yml` — Node action entry point.
 - `/draft.md` — original design notes and exploration.

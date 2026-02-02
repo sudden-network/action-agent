@@ -1,4 +1,4 @@
-# Codex Worker: Feasibility + Design Notes
+# ActionAgent: Feasibility + Design Notes
 
 ## Feasibility (short)
 

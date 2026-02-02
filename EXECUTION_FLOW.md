@@ -1,6 +1,6 @@
-# Execution flow (Codex Worker action)
+# Execution flow (ActionAgent action)
 
-This describes the current runtime order in `/.github/actions/codex-worker/src/index.js`.
+This describes the current runtime order in `/.github/actions/action-agent/src/index.js`.
 
 1) Inputs + context bootstrap
 - Read inputs: `issue_number`, `comment_id`, `model`, `reasoning_effort`, `openai_api_key`, `github_token`.
@@ -27,7 +27,7 @@ This describes the current runtime order in `/.github/actions/codex-worker/src/i
 - Determine `isFollowUp` (comment or issue edited).
 - If follow‑up:
   - List artifacts.
-  - Filter by name `codex-worker-session-<issue>`.
+  - Filter by name `action-agent-session-<issue>`.
   - Sort by `created_at`, pick latest.
   - Download artifact into temp dir.
   - Restore into `CODEX_STATE_DIR` (handles both root/sessions layouts).
@@ -71,7 +71,7 @@ This describes the current runtime order in `/.github/actions/codex-worker/src/i
 12) Upload session artifact (on success)
 - If codex exit is 0:
   - List all files in `CODEX_STATE_DIR`.
-  - Upload artifact `codex-worker-session-<issue>`.
+  - Upload artifact `action-agent-session-<issue>`.
 
 13) Compose comment body + post
 - Optional header (edited issue/comment).
