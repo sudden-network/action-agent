@@ -1,6 +1,6 @@
 # Codex Worker
 
-Reusable GitHub Actions workflow that runs Codex CLI from issues and issue comments.
+Composite GitHub Action that runs Codex CLI from issues and issue comments.
 
 ## What this does
 
@@ -24,6 +24,9 @@ Reusable GitHub Actions workflow that runs Codex CLI from issues and issue comme
 - `pull-requests: write`
 - `actions: read`
 
+4) Runner requirements
+- Bash shell, `git`, `gh`, and `python` available.
+
 ## Quick start (caller workflow)
 
 Create a workflow in the target repo, e.g. `.github/workflows/codex-worker-issue.yml`:
@@ -45,18 +48,29 @@ permissions:
 
 jobs:
   codex-worker:
+    runs-on: ubuntu-latest
     concurrency:
       group: ${{ format('issue-{0}', github.event.issue.number) }}
       cancel-in-progress: false
-    uses: etienne-martin/codex-worker/.github/workflows/issue.yml@main
-    with:
-      issue_number: ${{ github.event.issue.number }}
-      comment_id: ${{ github.event.comment.id || '' }}
-      # Optional:
-      # model: gpt-5.1-codex-mini
-      # reasoning_effort: low
-    secrets:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run Codex Worker
+        uses: etienne-martin/codex-worker/.github/actions/codex-worker@main
+        with:
+          issue_number: ${{ github.event.issue.number }}
+          comment_id: ${{ github.event.comment.id || '' }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ github.token }}
+          # Optional:
+          # model: gpt-5.1-codex-mini
+          # reasoning_effort: low
 ```
 
 ## Notes
@@ -67,5 +81,5 @@ jobs:
 
 ## Files
 
-- `/.github/workflows/issue.yml` — reusable workflow entry point.
+- `/.github/actions/codex-worker/action.yml` — composite action entry point.
 - `/draft.md` — original design notes and exploration.

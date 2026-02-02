@@ -1,0 +1,438 @@
+name: Codex Worker
+
+description: Run Codex CLI for issue/issue_comment threads.
+
+inputs:
+  issue_number:
+    description: GitHub issue number
+    required: true
+  comment_id:
+    description: GitHub comment ID (optional)
+    required: false
+    default: ""
+  model:
+    description: Codex model override (optional)
+    required: false
+    default: ""
+  reasoning_effort:
+    description: Codex reasoning effort override (optional)
+    required: false
+    default: ""
+  openai_api_key:
+    description: OpenAI API key
+    required: true
+  github_token:
+    description: GitHub token used for API + gh
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Codex CLI
+      shell: bash
+      run: npm install -g @openai/codex@0.93.0
+
+    - name: Set Codex paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        codex_home="$RUNNER_TEMP/codex-home"
+        mkdir -p "$codex_home"
+        echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
+        echo "CODEX_STATE_DIR=$codex_home" >> "$GITHUB_ENV"
+        echo "CODEX_SESSIONS_PATH=$codex_home/sessions" >> "$GITHUB_ENV"
+
+    - name: Codex login
+      id: login
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ -z "$OPENAI_API_KEY" ]; then
+          echo "missing_auth=true" >> "$GITHUB_OUTPUT"
+          echo "OPENAI_API_KEY is missing. Add it as a repo/org secret." > /tmp/codex_output.txt
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        printenv OPENAI_API_KEY | codex login --with-api-key
+        echo "missing_auth=false" >> "$GITHUB_OUTPUT"
+
+    - name: Check edit freshness
+      id: edit_fresh
+      if: ${{ github.event.action == 'edited' }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        stale=false
+
+        if [ -n "${{ inputs.comment_id }}" ]; then
+          current_body=$(gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.body // ""')
+          event_body="${{ github.event.comment.body }}"
+          if [ "$current_body" != "$event_body" ]; then
+            stale=true
+          fi
+        else
+          current_title=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.title // ""')
+          current_body=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.body // ""')
+          event_title="${{ github.event.issue.title }}"
+          event_body="${{ github.event.issue.body }}"
+          if [ "$current_title" != "$event_title" ] || [ "$current_body" != "$event_body" ]; then
+            stale=true
+          fi
+        fi
+
+        echo "stale=$stale" >> "$GITHUB_OUTPUT"
+        if [ "$stale" = true ]; then
+          echo "Edit superseded; skipping stale run." > /tmp/codex_output.txt
+        fi
+
+    - name: Add eyes reaction
+      if: ${{ steps.edit_fresh.outputs.stale != 'true' }}
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ -n "${{ inputs.comment_id }}" ]; then
+          gh api -X POST "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}/reactions" \
+            -f content=eyes >/dev/null
+        else
+          gh api -X POST "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}/reactions" \
+            -f content=eyes >/dev/null
+        fi
+
+    - name: Find session artifact
+      id: find_artifact
+      if: ${{ (inputs.comment_id != '' || github.event.action == 'edited') && steps.edit_fresh.outputs.stale != 'true' }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        missing_session=true
+        artifact_run_id=""
+
+        if ! artifact_run_id=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+          --jq '[.artifacts[] | select(.name=="codex-worker-session-${{ inputs.issue_number }}") | select(.expired==false)] | sort_by(.created_at) | last | .workflow_run.id'); then
+          echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          echo "run_id=" >> "$GITHUB_OUTPUT"
+          echo "Failed to list artifacts; cannot resume. Ensure actions: read permission." > /tmp/codex_output.txt
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "$artifact_run_id" = "null" ] || [ -z "$artifact_run_id" ]; then
+          echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          echo "run_id=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "missing_session=false" >> "$GITHUB_OUTPUT"
+        echo "run_id=$artifact_run_id" >> "$GITHUB_OUTPUT"
+
+    - name: Download session artifact
+      id: download_session
+      if: ${{ (inputs.comment_id != '' || github.event.action == 'edited') && steps.find_artifact.outputs.missing_session == 'false' && steps.edit_fresh.outputs.stale != 'true' }}
+      uses: actions/download-artifact@v4
+      continue-on-error: true
+      with:
+        name: codex-worker-session-${{ inputs.issue_number }}
+        run-id: ${{ steps.find_artifact.outputs.run_id }}
+        github-token: ${{ inputs.github_token }}
+        repository: ${{ github.repository }}
+        path: ${{ runner.temp }}/codex-session
+
+    - name: Restore session artifact
+      id: restore
+      if: ${{ (inputs.comment_id != '' || github.event.action == 'edited') && steps.edit_fresh.outputs.stale != 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ "${{ steps.find_artifact.outputs.missing_session }}" = "true" ]; then
+          echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          echo "Session artifact not found; cannot resume." > /tmp/codex_output.txt
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "${{ steps.download_session.outcome }}" != "success" ]; then
+          echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          echo "Session artifact not found; cannot resume." > /tmp/codex_output.txt
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        src="${{ runner.temp }}/codex-session"
+        if [ -d "$src/sessions" ] && [ ! -f "$src/history.jsonl" ] && [ ! -f "$src/session_id.txt" ]; then
+          src="$src/sessions"
+        fi
+
+        if [ ! -e "$src" ]; then
+          echo "missing_session=true" >> "$GITHUB_OUTPUT"
+          echo "Session artifact missing contents; cannot resume." > /tmp/codex_output.txt
+          echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        dest="$CODEX_STATE_DIR"
+        if [ ! -d "$src/sessions" ] && [ ! -f "$src/history.jsonl" ] && [ ! -f "$src/config.toml" ]; then
+          dest="$CODEX_SESSIONS_PATH"
+        fi
+
+        mkdir -p "$CODEX_STATE_DIR"
+        mkdir -p "$dest"
+        cp -a "$src/." "$dest/"
+
+        echo "missing_session=false" >> "$GITHUB_OUTPUT"
+
+    - name: Load issue metadata
+      id: issue_data
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        issue_title=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.title // ""')
+        issue_body=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.body // ""')
+        issue_html_url=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.issue_number }}" --jq '.html_url // ""')
+
+        {
+          echo "issue_title<<EOF"
+          printf '%s\n' "$issue_title"
+          echo "EOF"
+          echo "issue_body<<EOF"
+          printf '%s\n' "$issue_body"
+          echo "EOF"
+          echo "issue_html_url=$issue_html_url"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Load comment metadata
+      id: comment_data
+      if: ${{ inputs.comment_id != '' }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        comment_body=$(gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.body // ""')
+        comment_html_url=$(gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.html_url // ""')
+
+        {
+          echo "comment_body<<EOF"
+          printf '%s\n' "$comment_body"
+          echo "EOF"
+          echo "comment_html_url=$comment_html_url"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Prepare prompt
+      id: prompt
+      if: ${{ steps.login.outputs.missing_auth != 'true' && !((inputs.comment_id != '' || github.event.action == 'edited') && steps.restore.outputs.missing_session == 'true') && steps.edit_fresh.outputs.stale != 'true' }}
+      env:
+        ISSUE_TITLE: ${{ steps.issue_data.outputs.issue_title }}
+        ISSUE_BODY: ${{ steps.issue_data.outputs.issue_body }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        ISSUE_HTML_URL: ${{ steps.issue_data.outputs.issue_html_url }}
+        COMMENT_BODY: ${{ steps.comment_data.outputs.comment_body }}
+        COMMENT_HTML_URL: ${{ steps.comment_data.outputs.comment_html_url }}
+        EVENT_ACTION: ${{ github.event.action }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        prompt_file=$(mktemp)
+        resume_mode=false
+        if [ -n "$COMMENT_BODY" ]; then
+          if [ "$EVENT_ACTION" = "edited" ] && [ -n "$COMMENT_HTML_URL" ]; then
+            echo "Edited comment: $COMMENT_HTML_URL" > "$prompt_file"
+            echo "Respond to the updated content and continue the existing thread." >> "$prompt_file"
+            echo >> "$prompt_file"
+          fi
+          printf '%s\n' "$COMMENT_BODY" >> "$prompt_file"
+          resume_mode=true
+        else
+          if ! PROMPT_FILE="$prompt_file" python -c $'import os\nfrom pathlib import Path\n\noutput_path=Path(os.environ["PROMPT_FILE"])\n\ntemplate = """You are running inside a GitHub Actions workflow triggered by a new issue.\\n\\nContext:\n- This runs on a GitHub Actions runner with an ephemeral filesystem; everything is discarded when the job ends.\n- You only have access to the checked-out repository workspace, not the local machine of the user.\n- The only durable outputs are: commits pushed to a branch and the Codex session artifact (for conversation state only).\n- Uncommitted changes will be lost. If you modify any non-gitignored file, commit and push those changes to a branch associated with this issue before responding. Any commit must reference this issue.\n- The GitHub CLI is available; you can open a PR with `gh pr create` after pushing a branch (GH_TOKEN/GITHUB_TOKEN are provided in the environment).\n- If you are confident the issue is resolved by your changes, create a draft PR from the branch you pushed.\n- Your response will be posted as a comment on the issue and rendered as GitHub-flavored Markdown.\\n\\nInstructions:\\n- Read the issue title and description below.\\n- Be concise and actionable.\\n- Use Markdown only when it improves clarity.\\n- If you need literal backticks inline, escape them (e.g., \\\\\`\\\\`\\\\`).\\n- Put code snippets in fenced code blocks on their own lines.\\n- When creating PRs with `gh pr create`, pass multiline bodies via `--body-file` or a heredoc so newlines are real; do not include literal \\\\n sequences.\\n- Include a collapsed <details> section titled "Reasoning" with a brief, high-level rationale only (no step-by-step chain-of-thought).\\n\\n{{EDIT_CONTEXT}}\\n<issue-number>{{ISSUE_NUMBER}}</issue-number>\\n\\n<title>{{ISSUE_TITLE}}</title>\\n\\n<description>{{ISSUE_BODY}}</description>\\n"""\n\nedit_context=""\nif os.environ.get("EVENT_ACTION")=="edited":\n    issue_url=os.environ.get("ISSUE_HTML_URL", "")\n    if issue_url:\n        edit_context=f"Issue updated: {issue_url}\\n\\nContinue the existing thread; do not restart.\\n\\n"\n    else:\n        edit_context="Issue updated. Continue the existing thread; do not restart.\\n\\n"\n\nreplacements={\n    "{{ISSUE_NUMBER}}": os.environ.get("ISSUE_NUMBER", ""),\n    "{{ISSUE_TITLE}}": os.environ.get("ISSUE_TITLE", ""),\n    "{{ISSUE_BODY}}": os.environ.get("ISSUE_BODY", ""),\n    "{{EDIT_CONTEXT}}": edit_context,\n}\nfor key, value in replacements.items():\n    template = template.replace(key, value)\n\noutput_path.write_text(template, encoding="utf-8")\n'; then
+            echo "Failed to build issue prompt." > /tmp/codex_output.txt
+            echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+            echo "prompt_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_ACTION" = "edited" ]; then
+            resume_mode=true
+          fi
+        fi
+
+        echo "prompt_file=$prompt_file" >> "$GITHUB_OUTPUT"
+        echo "prompt_ready=true" >> "$GITHUB_OUTPUT"
+        echo "resume_mode=$resume_mode" >> "$GITHUB_OUTPUT"
+
+    - name: Run Codex
+      id: codex
+      if: ${{ steps.login.outputs.missing_auth != 'true' && !((inputs.comment_id != '' || github.event.action == 'edited') && steps.restore.outputs.missing_session == 'true') && steps.prompt.outputs.prompt_ready == 'true' && steps.edit_fresh.outputs.stale != 'true' }}
+      env:
+        ISSUE_TITLE: ${{ steps.issue_data.outputs.issue_title }}
+        ISSUE_BODY: ${{ steps.issue_data.outputs.issue_body }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        COMMENT_BODY: ${{ steps.comment_data.outputs.comment_body }}
+        MODEL: ${{ inputs.model }}
+        REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        prompt_file="${{ steps.prompt.outputs.prompt_file }}"
+
+        set +e
+        codex_args=(--sandbox workspace-write -c "approval_policy=\"never\"" -c "sandbox_workspace_write.network_access=true" -c "shell_environment_policy.inherit=all" -c "shell_environment_policy.ignore_default_excludes=true")
+        if [ -n "$MODEL" ]; then
+          codex_args+=(--model "$MODEL")
+        fi
+        if [ -n "$REASONING_EFFORT" ]; then
+          codex_args+=(-c "model_reasoning_effort=$REASONING_EFFORT")
+        fi
+
+        if [ -n "$COMMENT_BODY" ]; then
+          if [ -f "$CODEX_STATE_DIR/history.jsonl" ]; then
+            has_session=true
+          else
+            has_session=false
+          fi
+
+          if [ "$has_session" = false ] && [ ! -d "$CODEX_SESSIONS_PATH" ]; then
+            echo "Session files missing; cannot resume." > /tmp/codex_output.txt
+            echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          session_files=$(find "$CODEX_SESSIONS_PATH" -type f -name "*.jsonl" | head -n 1 || true)
+          if [ "$has_session" = false ] && [ -z "$session_files" ]; then
+            echo "Session files missing; cannot resume." > /tmp/codex_output.txt
+            echo "codex_exit=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s' "$(cat "$prompt_file")" | codex exec "${codex_args[@]}" --json resume --last - 2>&1 | tee /tmp/codex_output.txt
+        else
+          codex exec "${codex_args[@]}" --json "$(cat "$prompt_file")" 2>&1 | tee /tmp/codex_output.txt
+        fi
+        codex_exit=${PIPESTATUS[0]}
+        set -e
+
+        echo "codex_exit=$codex_exit" >> "$GITHUB_OUTPUT"
+
+    - name: Extract Codex response
+      if: ${{ steps.codex.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        output_file=/tmp/codex_output.txt
+        response_file=/tmp/codex_response.txt
+
+        if [ ! -f "$output_file" ]; then
+          echo "" > "$response_file"
+          exit 0
+        fi
+
+        if ! python -c $'import json\nfrom pathlib import Path\noutput_path=Path("/tmp/codex_output.txt")\nresponse_path=Path("/tmp/codex_response.txt")\nresponse=""\nwith output_path.open("r", encoding="utf-8") as handle:\n    for line in handle:\n        line=line.strip()\n        if not line:\n            continue\n        try:\n            event=json.loads(line)\n        except json.JSONDecodeError:\n            raise SystemExit(1)\n        if event.get("type")=="item.completed":\n            item=event.get("item") or {}\n            if item.get("type")=="agent_message":\n                response=item.get("text") or ""\nresponse_path.write_text(response, encoding="utf-8")'
+        then
+          cp "$output_file" "$response_file"
+        fi
+
+        if [ ! -s "$response_file" ]; then
+          cp "$output_file" "$response_file"
+        fi
+
+    - name: Strip Codex auth
+      if: ${{ steps.codex.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -f "$CODEX_STATE_DIR/auth.json"
+
+    - name: Prune Codex temp
+      if: ${{ steps.codex.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf "$CODEX_STATE_DIR/tmp"
+
+    - name: Upload session artifact
+      if: ${{ steps.codex.outcome == 'success' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: codex-worker-session-${{ inputs.issue_number }}
+        path: ${{ env.CODEX_STATE_DIR }}
+        retention-days: 7
+        overwrite: true
+        if-no-files-found: error
+        include-hidden-files: true
+
+    - name: Comment on issue
+      if: ${{ !cancelled() && steps.edit_fresh.outputs.stale != 'true' }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        ISSUE_HTML_URL: ${{ steps.issue_data.outputs.issue_html_url }}
+        COMMENT_HTML_URL: ${{ steps.comment_data.outputs.comment_html_url }}
+        EVENT_ACTION: ${{ github.event.action }}
+        FIND_CODEX_EXIT: ${{ steps.find_artifact.outputs.codex_exit }}
+        LOGIN_CODEX_EXIT: ${{ steps.login.outputs.codex_exit }}
+        PROMPT_CODEX_EXIT: ${{ steps.prompt.outputs.codex_exit }}
+        RESTORE_CODEX_EXIT: ${{ steps.restore.outputs.codex_exit }}
+        CODEX_CODEX_EXIT: ${{ steps.codex.outputs.codex_exit }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        codex_exit="${PROMPT_CODEX_EXIT:-${RESTORE_CODEX_EXIT:-${FIND_CODEX_EXIT:-${LOGIN_CODEX_EXIT:-$CODEX_CODEX_EXIT}}}}"
+
+        header=""
+        if [ "$EVENT_ACTION" = "edited" ]; then
+          if [ -n "$COMMENT_HTML_URL" ]; then
+            printf -v header "Edited comment: %s\n\n" "$COMMENT_HTML_URL"
+          elif [ -n "$ISSUE_HTML_URL" ]; then
+            printf -v header "Issue updated: %s\n\n" "$ISSUE_HTML_URL"
+          else
+            header=$'Issue updated.\n\n'
+          fi
+        fi
+
+        gh api \
+          --method POST \
+          "repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments" \
+          -f body="$(
+            if [ -n "$codex_exit" ] && [ "$codex_exit" -ne 0 ]; then
+              if [ -f /tmp/codex_output.txt ]; then
+                printf "%s" "$header"
+                cat /tmp/codex_output.txt
+              else
+                printf "%s" "$header"
+                echo "(no output)"
+              fi
+            else
+              if [ -f /tmp/codex_response.txt ]; then
+                printf "%s" "$header"
+                cat /tmp/codex_response.txt
+              elif [ -f /tmp/codex_output.txt ]; then
+                printf "%s" "$header"
+                cat /tmp/codex_output.txt
+              else
+                printf "%s" "$header"
+                echo "(no output)"
+              fi
+            fi
+          )"
