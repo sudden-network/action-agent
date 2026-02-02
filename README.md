@@ -19,10 +19,10 @@ Composite GitHub Action that runs Codex CLI from issues and issue comments.
 - The **Read and write** default is optional if your workflow sets explicit permissions (this one does).
 
 3) Caller workflow permissions
-- `contents: write`
-- `issues: write`
-- `pull-requests: write`
-- `actions: read`
+- `contents: write` — push branches/commits back to the repo.
+- `issues: write` — add reactions and post issue comments.
+- `pull-requests: write` — create draft PRs from branches.
+- `actions: read` — list/download artifacts for session restore.
 
 4) Runner requirements
 - Bash shell, `git`, `gh`, and `python` available.
