@@ -1,6 +1,6 @@
 # Codex Worker
 
-Composite GitHub Action that runs Codex CLI from issues and issue comments.
+GitHub Action (Node) that runs Codex CLI from issues and issue comments.
 
 ## What this does
 
