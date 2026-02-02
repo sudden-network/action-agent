@@ -277,6 +277,32 @@ describe('Codex Worker action', () => {
     expect(mockLastCodexInput).toContain('Updated comment body');
   });
 
+  test('includes edited comment header in response body', async () => {
+    setInputs({ issue_number: '18', comment_id: '202' });
+    setContext({ action: 'edited', comment: { body: 'Updated comment body' } });
+
+    const octokit = createOctokit({
+      commentBody: 'Updated comment body',
+      commentUrl: 'https://example.com/issues/18#comment-202',
+      artifacts: [
+        { id: 4, name: 'codex-worker-session-18', expired: false, created_at: '2026-02-01T00:00:00Z' },
+      ],
+    });
+    mockGetOctokit.mockReturnValue(octokit);
+
+    mockArtifactClient.downloadArtifact.mockImplementation(async (_id, options) => {
+      const sessionsDir = path.join(options.path, 'sessions');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.writeFileSync(path.join(sessionsDir, 'session.jsonl'), '');
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body.startsWith('Edited comment: https://example.com/issues/18#comment-202')).toBe(true);
+  });
+
   test('reports missing OpenAI API key', async () => {
     setInputs({ issue_number: '11', openai_api_key: '' });
     setContext({ action: 'opened' });
@@ -349,6 +375,30 @@ describe('Codex Worker action', () => {
     expect(mockLastCodexInput).toContain('Issue updated');
   });
 
+  test('edited issue uses template edit context when no comment', async () => {
+    setInputs({ issue_number: '19' });
+    setContext({ action: 'edited' });
+
+    const octokit = createOctokit({
+      issueUrl: 'https://example.com/issues/19',
+      artifacts: [
+        { id: 5, name: 'codex-worker-session-19', expired: false, created_at: '2026-02-01T00:00:00Z' },
+      ],
+    });
+    mockGetOctokit.mockReturnValue(octokit);
+
+    mockArtifactClient.downloadArtifact.mockImplementation(async (_id, options) => {
+      fs.mkdirSync(options.path, { recursive: true });
+      fs.writeFileSync(path.join(options.path, 'history.jsonl'), '');
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(mockLastCodexInput).toContain('Issue updated: https://example.com/issues/19');
+    expect(mockLastCodexInput).toContain('Continue the existing thread; do not restart.');
+  });
+
   test('uses model and reasoning effort when provided', async () => {
     setInputs({ issue_number: '16', model: 'gpt-test', reasoning_effort: 'low' });
     setContext({ action: 'opened' });
@@ -361,6 +411,130 @@ describe('Codex Worker action', () => {
 
     expect(mockLastCodexArgs).toEqual(expect.arrayContaining(['--model', 'gpt-test']));
     expect(mockLastCodexArgs).toEqual(expect.arrayContaining(['-c', 'model_reasoning_effort=low']));
+  });
+
+  test('handles artifact download failure', async () => {
+    setInputs({ issue_number: '20', comment_id: '303' });
+    setContext({ action: 'created', comment: { body: 'continue' } });
+
+    const octokit = createOctokit({
+      artifacts: [
+        { id: 6, name: 'codex-worker-session-20', expired: false, created_at: '2026-02-01T00:00:00Z' },
+      ],
+    });
+    mockGetOctokit.mockReturnValue(octokit);
+
+    mockArtifactClient.downloadArtifact.mockRejectedValue(new Error('boom'));
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('Session artifact not found; cannot resume.');
+  });
+
+  test('handles session artifact missing contents', async () => {
+    setInputs({ issue_number: '21', comment_id: '404' });
+    setContext({ action: 'created', comment: { body: 'continue' } });
+
+    const octokit = createOctokit({
+      artifacts: [
+        { id: 7, name: 'codex-worker-session-21', expired: false, created_at: '2026-02-01T00:00:00Z' },
+      ],
+    });
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const downloadPath = path.join(process.env.RUNNER_TEMP, 'codex-session');
+    mockArtifactClient.downloadArtifact.mockImplementation(async (_id, options) => {
+      fs.mkdirSync(options.path, { recursive: true });
+      fs.writeFileSync(path.join(options.path, 'history.jsonl'), '');
+    });
+
+    const existsSpy = jest.spyOn(fs, 'existsSync');
+    existsSpy.mockImplementation((filePath) => {
+      if (filePath === downloadPath) {
+        return false;
+      }
+      return true;
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('Session artifact missing contents; cannot resume.');
+    existsSpy.mockRestore();
+  });
+
+  test('handles list artifacts failure', async () => {
+    setInputs({ issue_number: '22', comment_id: '505' });
+    setContext({ action: 'created', comment: { body: 'continue' } });
+
+    const octokit = createOctokit();
+    octokit.rest.actions.listArtifactsForRepo.mockRejectedValue(new Error('fail'));
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => core.setFailed.mock.calls.length === 1);
+
+    expect(core.setFailed).toHaveBeenCalledWith('fail');
+    expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  test('reports codex non-zero exit with raw output', async () => {
+    setInputs({ issue_number: '23' });
+    setContext({ action: 'opened' });
+
+    mockCodexExit = 2;
+    mockCodexOutput = 'codex failed\\n';
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const existsSpy = jest.spyOn(fs, 'existsSync');
+    existsSpy.mockImplementation((filePath) => {
+      if (filePath === '/tmp/codex_output.txt') {
+        return true;
+      }
+      if (filePath === '/tmp/codex_response.txt') {
+        return false;
+      }
+      return true;
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('codex failed');
+    expect(mockArtifactClient.uploadArtifact).not.toHaveBeenCalled();
+    existsSpy.mockRestore();
+  });
+
+  test('falls back to raw output when no agent_message', async () => {
+    setInputs({ issue_number: '24' });
+    setContext({ action: 'opened' });
+
+    mockCodexOutput = `${JSON.stringify({ type: 'item.completed', item: { type: 'tool_call', text: '' } })}\\n`;
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const existsSpy = jest.spyOn(fs, 'existsSync');
+    existsSpy.mockImplementation((filePath) => {
+      if (filePath === '/tmp/codex_output.txt') {
+        return true;
+      }
+      if (filePath === '/tmp/codex_response.txt') {
+        return false;
+      }
+      return true;
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('item.completed');
+    existsSpy.mockRestore();
   });
 
   test('strips auth and temp files after run', async () => {
