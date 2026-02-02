@@ -364,12 +364,6 @@ const main = async () => {
         throw new Error('No Codex state files found for upload.');
       }
 
-      const existing = await octokit.rest.actions.listArtifactsForRepo({ owner, repo, per_page: 100 });
-      const toDelete = existing.data.artifacts.filter((item) => item.name === artifactName && !item.expired);
-      for (const item of toDelete) {
-        await octokit.rest.actions.deleteArtifact({ owner, repo, artifact_id: item.id });
-      }
-
       await artifactClient.uploadArtifact(artifactName, files, codexStateDir, {
         retentionDays: ARTIFACT_RETENTION_DAYS,
       });
