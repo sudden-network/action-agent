@@ -58,7 +58,7 @@ jobs:
           node-version: "20"
 
       - name: Run action-agent
-        uses: etienne-martin/action-agent@main
+        uses: sudden-network/action-agent@main
         with:
           issue_number: ${{ github.event.issue.number }}
           comment_id: ${{ github.event.comment.id || '' }}
