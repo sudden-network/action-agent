@@ -304,9 +304,9 @@ const main = async () => {
         '-c',
         'sandbox_workspace_write.network_access=true',
         '-c',
-        'shell_environment_policy.inherit="none"',
+        'shell_environment_policy.inherit=all',
         '-c',
-        'shell_environment_policy.include_only=["PATH","HOME","USER","SHELL","PWD","GITHUB_WORKSPACE","RUNNER_TEMP","TMPDIR","CI","GH_TOKEN","GITHUB_TOKEN","OPENAI_API_KEY","CODEX_HOME","CODEX_STATE_DIR","CODEX_SESSIONS_PATH"]',
+        'shell_environment_policy.ignore_default_excludes=true',
       ];
       if (model) {
         codexArgs.push('--model', model);
