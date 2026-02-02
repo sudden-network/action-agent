@@ -719,6 +719,35 @@ describe('Codex Worker action', () => {
     readSpy.mockRestore();
   });
 
+  test('reports no output when response and output files are absent', async () => {
+    setInputs({ issue_number: '34' });
+    setContext({ action: 'opened' });
+
+    mockCodexExit = 0;
+    mockCodexOutput = '';
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const originalExistsSync = fs.existsSync.bind(fs);
+    const existsSpy = jest.spyOn(fs, 'existsSync');
+    existsSpy.mockImplementation((filePath) => {
+      if (filePath === '/tmp/codex_output.txt') {
+        return false;
+      }
+      if (filePath === '/tmp/codex_response.txt') {
+        return false;
+      }
+      return originalExistsSync(filePath);
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('(no output)');
+    existsSpy.mockRestore();
+  });
+
   test('fails when no session files exist to upload', async () => {
     setInputs({ issue_number: '33' });
     setContext({ action: 'opened' });
