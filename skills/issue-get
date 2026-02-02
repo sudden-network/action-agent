@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+issue=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --issue)
+      issue="$2"
+      shift 2
+      ;;
+    --help)
+      echo "Usage: issue-get --issue N" >&2
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+ done
+
+if [[ -z "$issue" ]]; then
+  issue=$(node - <<'NODE'
+const fs = require('fs');
+const eventPath = process.env.GITHUB_EVENT_PATH;
+if (!eventPath) process.exit(1);
+const payload = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
+const number = payload.issue?.number;
+if (!number) process.exit(1);
+console.log(number);
+NODE
+  )
+fi
+
+repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+
+gh api "repos/$repo/issues/$issue"

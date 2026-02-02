@@ -6,9 +6,64 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const CODEX_VERSION = '0.93.0';
-const OUTPUT_FILE = '/tmp/codex_output.txt';
-const RESPONSE_FILE = '/tmp/codex_response.txt';
 const ARTIFACT_RETENTION_DAYS = 7;
+const MAX_ITEMS = 20;
+const STATE_FILENAME = 'state.json';
+
+type SubjectType = 'issue' | 'pr';
+
+type Subject = {
+  type: SubjectType;
+  number: number;
+};
+
+type SessionState = {
+  subjectType: SubjectType;
+  subjectNumber: number;
+  lastRunAt: string;
+  lastIssueCommentId?: number;
+  lastReviewCommentId?: number;
+  lastHeadSha?: string;
+};
+
+type IssueComment = {
+  id: number;
+  body?: string | null;
+  html_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  user?: { login?: string | null } | null;
+};
+
+type ReviewComment = {
+  id: number;
+  body?: string | null;
+  html_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  path?: string | null;
+  line?: number | null;
+  user?: { login?: string | null } | null;
+};
+
+type PullRequestData = {
+  html_url: string;
+  title: string;
+  body: string | null;
+  state: string;
+  draft: boolean;
+  updated_at: string | null;
+  base: { ref: string };
+  head: { ref: string; sha: string };
+};
+
+type IssueData = {
+  html_url: string;
+  title: string;
+  body: string | null;
+  state: string;
+  updated_at: string | null;
+};
 
 const readText = (filePath: string): string => fs.readFileSync(filePath, 'utf8');
 
@@ -54,52 +109,6 @@ const listFiles = (dir: string): string[] => {
   return files;
 };
 
-const requireString = (value: unknown, label: string): string => {
-  if (typeof value !== 'string') {
-    throw new Error(`${label} missing.`);
-  }
-  return value;
-};
-
-const readPromptTemplate = (): string => {
-  const templatePath = path.resolve(__dirname, '../src/prompt-template.md');
-  return readText(templatePath);
-};
-
-const replaceTemplate = (template: string, replacements: Record<string, string>): string =>
-  Object.entries(replacements).reduce((output, [key, value]) => output.split(key).join(value), template);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const parseJsonLine = (line: string): unknown => {
-  try {
-    return JSON.parse(line) as unknown;
-  } catch (error) {
-    throw new Error('Failed to parse Codex JSONL output.');
-  }
-};
-
-const parseJsonLines = (filePath: string): string => {
-  if (!fs.existsSync(filePath)) {
-    return '';
-  }
-  const data = readText(filePath);
-  return data.split(/\r?\n/).reduce((response, line) => {
-    if (!line.trim()) {
-      return response;
-    }
-    const parsed = parseJsonLine(line);
-    if (isRecord(parsed) && parsed.type === 'item.completed') {
-      const item = isRecord(parsed.item) ? parsed.item : {};
-      if (item.type === 'agent_message') {
-        return typeof item.text === 'string' ? item.text : '';
-      }
-    }
-    return response;
-  }, '');
-};
-
 const buildEnv = (env: NodeJS.ProcessEnv): Record<string, string> => {
   const output: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -110,46 +119,369 @@ const buildEnv = (env: NodeJS.ProcessEnv): Record<string, string> => {
   return output;
 };
 
-const addEyesReaction = async ({
-  commentId,
+const readPromptTemplate = (): string => {
+  const templatePath = path.resolve(__dirname, '../src/prompt-template.md');
+  return readText(templatePath);
+};
+
+const replaceTemplate = (template: string, replacements: Record<string, string>): string =>
+  Object.entries(replacements).reduce((output, [key, value]) => output.split(key).join(value), template);
+
+const isSubjectType = (value: unknown): value is SubjectType => value === 'issue' || value === 'pr';
+
+const loadState = (statePath: string): SessionState | null => {
+  if (!fs.existsSync(statePath)) {
+    return null;
+  }
+  const raw: unknown = JSON.parse(readText(statePath));
+  if (typeof raw !== 'object' || raw === null) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const subjectType = record.subjectType;
+  const subjectNumber = record.subjectNumber;
+  const lastRunAt = record.lastRunAt;
+  if (!isSubjectType(subjectType) || typeof subjectNumber !== 'number' || typeof lastRunAt !== 'string') {
+    return null;
+  }
+  const state: SessionState = { subjectType, subjectNumber, lastRunAt };
+  if (typeof record.lastIssueCommentId === 'number') {
+    state.lastIssueCommentId = record.lastIssueCommentId;
+  }
+  if (typeof record.lastReviewCommentId === 'number') {
+    state.lastReviewCommentId = record.lastReviewCommentId;
+  }
+  if (typeof record.lastHeadSha === 'string') {
+    state.lastHeadSha = record.lastHeadSha;
+  }
+  return state;
+};
+
+const writeState = (statePath: string, state: SessionState): void => {
+  writeText(statePath, `${JSON.stringify(state, null, 2)}\n`);
+};
+
+const parseOptionalNumber = (value: string): number | null => {
+  if (!value) {
+    return null;
+  }
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
+const getSubjectFromEvent = (eventName: string, payload: typeof github.context.payload, fallback: number | null): Subject => {
+  if (eventName === 'issues') {
+    const number = payload.issue?.number ?? fallback;
+    if (!number) {
+      throw new Error('Issue number missing from event payload.');
+    }
+    return { type: 'issue', number };
+  }
+  if (eventName === 'issue_comment') {
+    const number = payload.issue?.number ?? fallback;
+    if (!number) {
+      throw new Error('Issue number missing from event payload.');
+    }
+    const type: SubjectType = payload.issue?.pull_request ? 'pr' : 'issue';
+    return { type, number };
+  }
+  if (
+    eventName === 'pull_request' ||
+    eventName === 'pull_request_review' ||
+    eventName === 'pull_request_review_comment'
+  ) {
+    const number = payload.pull_request?.number ?? fallback;
+    if (!number) {
+      throw new Error('Pull request number missing from event payload.');
+    }
+    return { type: 'pr', number };
+  }
+  if (fallback) {
+    return { type: 'issue', number: fallback };
+  }
+  throw new Error(`Unsupported event: ${eventName}`);
+};
+
+const formatIssueComment = (comment: IssueComment) => ({
+  id: comment.id,
+  author: comment.user?.login ?? 'unknown',
+  body: comment.body ?? '',
+  url: comment.html_url ?? '',
+  created_at: comment.created_at ?? null,
+  updated_at: comment.updated_at ?? null,
+});
+
+const formatReviewComment = (comment: ReviewComment) => ({
+  id: comment.id,
+  author: comment.user?.login ?? 'unknown',
+  body: comment.body ?? '',
+  url: comment.html_url ?? '',
+  path: comment.path ?? null,
+  line: comment.line ?? null,
+  created_at: comment.created_at ?? null,
+  updated_at: comment.updated_at ?? null,
+});
+
+const formatCommit = (commit: { sha: string; commit?: { message?: string }; author?: { login?: string } | null }) => ({
+  sha: commit.sha,
+  message: commit.commit?.message ?? '',
+  author: commit.author?.login ?? null,
+});
+
+const formatFile = (file: { filename?: string; status?: string; changes?: number }) => ({
+  filename: file.filename ?? '',
+  status: file.status ?? '',
+  changes: file.changes ?? null,
+});
+
+const loadPullRequest = async ({
+  owner,
+  repo,
+  pullNumber,
+  octokit,
+}: {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  octokit: ReturnType<typeof github.getOctokit>;
+}): Promise<PullRequestData> => {
+  const pr = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  return {
+    html_url: pr.data.html_url,
+    title: pr.data.title,
+    body: pr.data.body,
+    state: pr.data.state,
+    draft: pr.data.draft ?? false,
+    updated_at: pr.data.updated_at,
+    base: { ref: pr.data.base.ref },
+    head: { ref: pr.data.head.ref, sha: pr.data.head.sha },
+  };
+};
+
+const loadIssue = async ({
+  owner,
+  repo,
   issueNumber,
+  octokit,
+}: {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  octokit: ReturnType<typeof github.getOctokit>;
+}): Promise<IssueData> => {
+  const issue = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
+  return {
+    html_url: issue.data.html_url,
+    title: issue.data.title,
+    body: issue.data.body ?? null,
+    state: issue.data.state,
+    updated_at: issue.data.updated_at ?? null,
+  };
+};
+
+const buildDelta = async ({
+  eventName,
+  eventAction,
+  payload,
+  subject,
+  state,
   owner,
   repo,
   octokit,
 }: {
-  commentId: string;
-  issueNumber: number;
+  eventName: string;
+  eventAction: string | undefined;
+  payload: typeof github.context.payload;
+  subject: Subject;
+  state: SessionState | null;
   owner: string;
   repo: string;
   octokit: ReturnType<typeof github.getOctokit>;
-}): Promise<void> => {
-  if (commentId) {
-    await octokit.rest.reactions.createForIssueComment({
-      owner,
-      repo,
-      comment_id: Number(commentId),
-      content: 'eyes',
-    });
-    return;
+}): Promise<{ deltaJson: string; subjectUrl: string; nextState: SessionState }> => {
+  const runStartedAt = new Date().toISOString();
+  const delta: Record<string, unknown> = {
+    event: {
+      name: eventName,
+      action: eventAction ?? null,
+      actor: payload.sender?.login ?? null,
+    },
+    subject: {
+      type: subject.type,
+      number: subject.number,
+    },
+  };
+
+  let subjectUrl = '';
+  let issueData: IssueData | null = null;
+  let prData: PullRequestData | null = null;
+
+  if (subject.type === 'pr') {
+    prData = await loadPullRequest({ owner, repo, pullNumber: subject.number, octokit });
+    subjectUrl = prData.html_url;
+  } else {
+    issueData = await loadIssue({ owner, repo, issueNumber: subject.number, octokit });
+    subjectUrl = issueData.html_url;
   }
 
-  await octokit.rest.reactions.createForIssue({
-    owner,
-    repo,
-    issue_number: issueNumber,
-    content: 'eyes',
-  });
+  delta.subject = { type: subject.type, number: subject.number, url: subjectUrl };
+  delta.subjectDetails = prData ?? issueData;
+
+  if (eventName === 'issues' && payload.issue) {
+    delta.eventIssue = {
+      title: payload.issue.title,
+      body: payload.issue.body ?? null,
+      url: payload.issue.html_url,
+      state: payload.issue.state,
+    };
+  }
+
+  if (eventName === 'issue_comment' && payload.comment) {
+    delta.eventComment = formatIssueComment(payload.comment);
+  }
+
+  if (eventName === 'pull_request' && payload.pull_request) {
+    delta.eventPullRequest = {
+      title: payload.pull_request.title,
+      body: payload.pull_request.body ?? null,
+      url: payload.pull_request.html_url,
+      state: payload.pull_request.state,
+      draft: payload.pull_request.draft ?? false,
+      head: payload.pull_request.head?.sha ?? null,
+      base: payload.pull_request.base?.ref ?? null,
+    };
+  }
+
+  if (eventName === 'pull_request_review_comment' && payload.comment) {
+    delta.eventReviewComment = formatReviewComment(payload.comment);
+  }
+
+  if (eventName === 'pull_request_review' && payload.review) {
+    delta.eventReview = {
+      state: payload.review.state,
+      body: payload.review.body ?? null,
+      url: payload.review.html_url,
+      author: payload.review.user?.login ?? null,
+    };
+  }
+
+  const since = state?.lastRunAt;
+  const newIssueComments = since
+    ? (
+        await octokit.rest.issues.listComments({
+          owner,
+          repo,
+          issue_number: subject.number,
+          since,
+          per_page: 100,
+        })
+      ).data
+    : [];
+
+  if (newIssueComments.length) {
+    delta.newComments = newIssueComments.slice(-MAX_ITEMS).map(formatIssueComment);
+  }
+
+  const newReviewComments =
+    subject.type === 'pr' && since
+      ? (
+          await octokit.rest.pulls.listReviewComments({
+            owner,
+            repo,
+            pull_number: subject.number,
+            since,
+            per_page: 100,
+          })
+        ).data
+      : [];
+
+  if (newReviewComments.length) {
+    delta.newReviewComments = newReviewComments.slice(-MAX_ITEMS).map(formatReviewComment);
+  }
+
+  if (subject.type === 'pr' && prData) {
+    const lastHeadSha = state?.lastHeadSha;
+    const currentSha = prData.head.sha;
+    if (lastHeadSha && lastHeadSha !== currentSha) {
+      const compare = await octokit.rest.repos.compareCommits({
+        owner,
+        repo,
+        base: lastHeadSha,
+        head: currentSha,
+      });
+      delta.commitChanges = {
+        from: lastHeadSha,
+        to: currentSha,
+        commits: compare.data.commits.slice(-MAX_ITEMS).map(formatCommit),
+        files: (compare.data.files ?? []).slice(0, MAX_ITEMS).map(formatFile),
+      };
+    } else if (!lastHeadSha) {
+      const commits = await octokit.rest.pulls.listCommits({
+        owner,
+        repo,
+        pull_number: subject.number,
+        per_page: 5,
+      });
+      delta.commitChanges = {
+        to: currentSha,
+        commits: commits.data.map(formatCommit),
+      };
+    }
+  }
+
+  const commentIds = newIssueComments.map((comment) => comment.id);
+  const reviewCommentIds = newReviewComments.map((comment) => comment.id);
+
+  const nextState: SessionState = {
+    subjectType: subject.type,
+    subjectNumber: subject.number,
+    lastRunAt: runStartedAt,
+  };
+
+  const lastIssueCommentId = [...commentIds, state?.lastIssueCommentId]
+    .filter((value): value is number => typeof value === 'number')
+    .reduce((max, value) => Math.max(max, value), -1);
+  if (lastIssueCommentId > -1) {
+    nextState.lastIssueCommentId = lastIssueCommentId;
+  }
+
+  const lastReviewCommentId = [...reviewCommentIds, state?.lastReviewCommentId]
+    .filter((value): value is number => typeof value === 'number')
+    .reduce((max, value) => Math.max(max, value), -1);
+  if (lastReviewCommentId > -1) {
+    nextState.lastReviewCommentId = lastReviewCommentId;
+  }
+
+  if (subject.type === 'pr' && prData) {
+    nextState.lastHeadSha = prData.head.sha;
+  }
+
+  return {
+    deltaJson: `${JSON.stringify(delta, null, 2)}\n`,
+    subjectUrl,
+    nextState,
+  };
+};
+
+const installSkills = (workspace: string, codexHome: string): void => {
+  const sourceDir = path.join(workspace, 'skills');
+  if (!fs.existsSync(sourceDir)) {
+    return;
+  }
+  const targetDir = path.join(codexHome, 'skills');
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  copyDir(sourceDir, targetDir);
+  core.addPath(targetDir);
 };
 
 const getLatestSessionArtifact = async ({
   owner,
   repo,
-  issueNumber,
+  subject,
   octokit,
 }: {
   owner: string;
   repo: string;
-  issueNumber: number;
+  subject: Subject;
   octokit: ReturnType<typeof github.getOctokit>;
 }) => {
   const perPage = 100;
@@ -162,7 +494,7 @@ const getLatestSessionArtifact = async ({
     const artifacts = await octokit.rest.actions.listArtifactsForRepo({
       owner,
       repo,
-      name: `action-agent-session-${issueNumber}`,
+      name: `action-agent-session-${subject.type}-${subject.number}`,
       per_page: perPage,
       page,
     });
@@ -174,7 +506,7 @@ const getLatestSessionArtifact = async ({
   }
 
   if (!matches.length) {
-    throw new Error('Session artifact not found; cannot resume.');
+    return null;
   }
 
   matches.sort((a, b) => {
@@ -186,92 +518,8 @@ const getLatestSessionArtifact = async ({
   return matches[matches.length - 1];
 };
 
-const isStaleEdit = async ({
-  eventAction,
-  commentId,
-  issueNumber,
-  owner,
-  repo,
-  octokit,
-  payload,
-}: {
-  eventAction: string | undefined;
-  commentId: string;
-  issueNumber: number;
-  owner: string;
-  repo: string;
-  octokit: ReturnType<typeof github.getOctokit>;
-  payload: typeof github.context.payload;
-}): Promise<boolean> => {
-  if (eventAction !== 'edited') {
-    return false;
-  }
-  if (commentId) {
-    const current = await octokit.rest.issues.getComment({ owner, repo, comment_id: Number(commentId) });
-    return current.data.body !== payload.comment?.body;
-  }
-  const issue = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
-  return issue.data.title !== payload.issue?.title || issue.data.body !== payload.issue?.body;
-};
-
-const buildPrompt = ({
-  commentId,
-  eventAction,
-  issueNumber,
-  issueTitle,
-  issueBody,
-  issueUrl,
-  commentBody,
-  commentUrl,
-}: {
-  commentId: string;
-  eventAction: string | undefined;
-  issueNumber: number;
-  issueTitle: string;
-  issueBody: string;
-  issueUrl: string;
-  commentBody: string;
-  commentUrl: string;
-}): { promptText: string; resumeMode: boolean } => {
-  const resumeMode = Boolean(commentId) || eventAction === 'edited';
-  if (commentId) {
-    const lines = [
-      ...(eventAction === 'edited'
-        ? [
-            `Edited comment: ${commentUrl}`,
-            'Respond to the updated content and continue the existing thread.',
-            '',
-          ]
-        : []),
-      commentBody,
-    ];
-    return { promptText: lines.join('\n'), resumeMode };
-  }
-
-  const editContext =
-    eventAction === 'edited'
-      ? `Issue updated: ${issueUrl}\n\nContinue the existing thread; do not restart.\n\n`
-      : '';
-  const promptText = replaceTemplate(readPromptTemplate(), {
-    '{{ISSUE_NUMBER}}': String(issueNumber),
-    '{{ISSUE_TITLE}}': issueTitle,
-    '{{ISSUE_BODY}}': issueBody,
-    '{{EDIT_CONTEXT}}': editContext,
-  });
-  return { promptText, resumeMode };
-};
-
-const safeParseJsonLines = (filePath: string): string => {
-  try {
-    return parseJsonLines(filePath);
-  } catch (error) {
-    return '';
-  }
-};
-
 const main = async (): Promise<void> => {
-  let issueNumber = 0;
-  let commentId = '';
+  let subject: Subject | null = null;
   let owner = '';
   let repo = '';
   let octokit: ReturnType<typeof github.getOctokit> | null = null;
@@ -286,29 +534,29 @@ const main = async (): Promise<void> => {
   core.exportVariable('CODEX_SESSIONS_PATH', codexSessionsPath);
 
   const postErrorComment = async (message: string): Promise<void> => {
-    if (!octokit || !owner || !repo || !Number.isFinite(issueNumber)) {
+    if (!octokit || !owner || !repo || !subject) {
       return;
     }
     await octokit.rest.issues.createComment({
       owner,
       repo,
-      issue_number: issueNumber,
+      issue_number: subject.number,
       body: message,
     });
   };
 
   try {
-    const issueNumberInput = core.getInput('issue_number', { required: true });
-    const commentIdInput = core.getInput('comment_id');
+    const issueNumberInput = parseOptionalNumber(core.getInput('issue_number'));
     const model = core.getInput('model');
     const reasoningEffort = core.getInput('reasoning_effort');
     const openaiApiKey = core.getInput('openai_api_key', { required: true });
     const githubToken = core.getInput('github_token', { required: true });
-    issueNumber = Number(issueNumberInput);
-    commentId = commentIdInput.trim();
     ({ owner, repo } = github.context.repo);
+    const eventName = github.context.eventName;
     const eventAction = github.context.payload.action;
     octokit = github.getOctokit(githubToken);
+
+    subject = getSubjectFromEvent(eventName, github.context.payload, issueNumberInput);
 
     const codexEnv = buildEnv({
       ...process.env,
@@ -325,35 +573,10 @@ const main = async (): Promise<void> => {
       throw new Error('OPENAI_API_KEY is missing. Add it as a repo/org secret.');
     }
 
-    if (
-      await isStaleEdit({
-        eventAction,
-        commentId,
-        issueNumber,
-        owner,
-        repo,
-        octokit,
-        payload: github.context.payload,
-      })
-    ) {
-      return;
-    }
+    installSkills(process.env.GITHUB_WORKSPACE || process.cwd(), codexHome);
 
-    try {
-      await addEyesReaction({ commentId, issueNumber, owner, repo, octokit });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      core.info(`Reaction failed: ${message}`);
-    }
-
-    const isFollowUp = Boolean(commentId) || eventAction === 'edited';
-    if (isFollowUp) {
-      const latestSessionArtifact = await getLatestSessionArtifact({
-        owner,
-        repo,
-        issueNumber,
-        octokit,
-      });
+    const latestSessionArtifact = await getLatestSessionArtifact({ owner, repo, subject, octokit });
+    if (latestSessionArtifact) {
       const downloadPath = path.join(process.env.RUNNER_TEMP || '/tmp', 'codex-session');
       const workflowRunId = latestSessionArtifact.workflow_run?.id;
       ensureDir(downloadPath);
@@ -362,19 +585,15 @@ const main = async (): Promise<void> => {
         throw new Error('Session artifact missing workflow run; cannot resume.');
       }
 
-      try {
-        await new DefaultArtifactClient().downloadArtifact(latestSessionArtifact.id, {
-          path: downloadPath,
-          findBy: {
-            token: githubToken,
-            repositoryOwner: owner,
-            repositoryName: repo,
-            workflowRunId,
-          },
-        });
-      } catch (error) {
-        throw new Error('Session artifact not found; cannot resume.');
-      }
+      await new DefaultArtifactClient().downloadArtifact(latestSessionArtifact.id, {
+        path: downloadPath,
+        findBy: {
+          token: githubToken,
+          repositoryOwner: owner,
+          repositoryName: repo,
+          workflowRunId,
+        },
+      });
 
       const source = downloadPath;
       const target = fs.existsSync(path.join(downloadPath, 'sessions'))
@@ -389,107 +608,82 @@ const main = async (): Promise<void> => {
       copyDir(source, target);
     }
 
-    const issue = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
-    const issueUrl = issue.data.html_url;
+    const statePath = path.join(codexStateDir, STATE_FILENAME);
+    const state = loadState(statePath);
 
-    const commentData = commentId
-      ? await octokit.rest.issues.getComment({ owner, repo, comment_id: Number(commentId) })
-      : null;
-    const commentBody = commentData ? requireString(commentData.data.body, 'Comment body') : '';
-    const commentUrl = commentData ? commentData.data.html_url : '';
-    const { promptText, resumeMode } = buildPrompt({
-      commentId,
+    const { deltaJson, subjectUrl, nextState } = await buildDelta({
+      eventName,
       eventAction,
-      issueNumber,
-      issueTitle: issue.data.title,
-      issueBody: issue.data.body ?? '',
-      issueUrl,
-      commentBody,
-      commentUrl,
+      payload: github.context.payload,
+      subject,
+      state,
+      owner,
+      repo,
+      octokit,
+    });
+
+    const promptText = replaceTemplate(readPromptTemplate(), {
+      '{{EVENT_NAME}}': eventName,
+      '{{EVENT_ACTION}}': eventAction ?? '',
+      '{{SUBJECT_TYPE}}': subject.type,
+      '{{SUBJECT_NUMBER}}': String(subject.number),
+      '{{SUBJECT_URL}}': subjectUrl,
+      '{{DELTA_JSON}}': deltaJson,
     });
 
     await exec.exec('bash', ['-lc', 'printenv OPENAI_API_KEY | codex login --with-api-key'], {
       env: codexEnv,
     });
 
-    const outputStream = fs.createWriteStream(OUTPUT_FILE, { flags: 'w' });
+    const codexExit = await exec.exec(
+      'codex',
+      [
+        ['exec'],
+        ['--sandbox', 'workspace-write'],
+        ['-c', 'approval_policy="never"'],
+        ['-c', 'sandbox_workspace_write.network_access=true'],
+        ['-c', 'shell_environment_policy.inherit=all'],
+        ['-c', 'shell_environment_policy.ignore_default_excludes=true'],
+        ...(model ? [['--model', model]] : []),
+        ...(reasoningEffort ? [['-c', `model_reasoning_effort=${reasoningEffort}`]] : []),
+        ...(latestSessionArtifact ? [['resume', '--last', '-']] : [['-']]),
+      ].flat(),
+      {
+        env: codexEnv,
+        input: Buffer.from(promptText, 'utf8'),
+        ignoreReturnCode: true,
+      }
+    );
 
-    const codexExit = await exec.exec('codex', [
-      ['exec'],
-      ['--json'],
-      ['--sandbox', 'workspace-write'],
-      ['-c', 'approval_policy="never"'],
-      ['-c', 'sandbox_workspace_write.network_access=true'],
-      ['-c', 'shell_environment_policy.inherit=all'],
-      ['-c', 'shell_environment_policy.ignore_default_excludes=true'],
-      ...(model ? [['--model', model]] : []),
-      ...(reasoningEffort ? [['-c', `model_reasoning_effort=${reasoningEffort}`]] : []),
-      ...(resumeMode ? [['resume', '--last', '-']] : [['-']]),
-    ].flat(), {
-      env: codexEnv,
-      input: Buffer.from(promptText, 'utf8'),
-      listeners: {
-        stdout: (data) => outputStream.write(data),
-        stderr: (data) => outputStream.write(data),
-      },
-      ignoreReturnCode: true,
-    });
-
-    await new Promise((resolve) => outputStream.end(resolve));
-
-    const responseText = safeParseJsonLines(OUTPUT_FILE);
-    if (responseText) {
-      writeText(RESPONSE_FILE, responseText);
-    } else if (fs.existsSync(OUTPUT_FILE)) {
-      fs.copyFileSync(OUTPUT_FILE, RESPONSE_FILE);
-    } else {
-      writeText(RESPONSE_FILE, '');
+    if (codexExit !== 0) {
+      throw new Error(`Codex exited with code ${codexExit}.`);
     }
+
+    writeState(statePath, nextState);
 
     fs.rmSync(path.join(codexStateDir, 'auth.json'), { force: true });
     fs.rmSync(path.join(codexStateDir, 'tmp'), { recursive: true, force: true });
 
-    if (codexExit === 0) {
-      const files = listFiles(codexStateDir);
+    const files = listFiles(codexStateDir);
 
-      if (!files.length) {
-        throw new Error('No Codex state files found for upload.');
-      }
-
-      await new DefaultArtifactClient().uploadArtifact(`action-agent-session-${issueNumber}`, files, codexStateDir, {
-        retentionDays: ARTIFACT_RETENTION_DAYS,
-      });
+    if (!files.length) {
+      throw new Error('No Codex state files found for upload.');
     }
 
-    const header =
-      eventAction !== 'edited'
-        ? ''
-        : commentId
-          ? `Edited comment: ${commentUrl}\n\n`
-          : `Issue updated: ${issueUrl}\n\n`;
-
-    const body =
-      codexExit !== 0
-        ? header + (fs.existsSync(OUTPUT_FILE) ? readText(OUTPUT_FILE) : '(no output)')
-        : fs.existsSync(RESPONSE_FILE)
-          ? header + readText(RESPONSE_FILE)
-          : fs.existsSync(OUTPUT_FILE)
-            ? header + readText(OUTPUT_FILE)
-            : header + '(no output)';
-
-    await octokit.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: issueNumber,
-      body,
-    });
+    await new DefaultArtifactClient().uploadArtifact(
+      `action-agent-session-${subject.type}-${subject.number}`,
+      files,
+      codexStateDir,
+      {
+        retentionDays: ARTIFACT_RETENTION_DAYS,
+      }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     try {
       await postErrorComment(message);
     } catch (commentError) {
-      const commentMessage =
-        commentError instanceof Error ? commentError.message : String(commentError);
+      const commentMessage = commentError instanceof Error ? commentError.message : String(commentError);
       core.info(`Failed to post error comment: ${commentMessage}`);
     }
     core.setFailed(message);

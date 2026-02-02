@@ -4,8 +4,9 @@ description: Run Codex CLI for issue/issue_comment threads.
 
 inputs:
   issue_number:
-    description: GitHub issue number
-    required: true
+    description: GitHub issue number (optional fallback)
+    required: false
+    default: ""
   comment_id:
     description: GitHub comment ID (optional)
     required: false
