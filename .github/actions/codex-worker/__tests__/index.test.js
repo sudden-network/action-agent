@@ -201,11 +201,13 @@ describe('Codex Worker action', () => {
       commentBody: 'What is up?',
       artifacts: [
         { id: 1, name: 'codex-worker-session-8', expired: false, created_at: '2026-02-01T00:00:00Z' },
+        { id: 2, name: 'codex-worker-session-8', expired: false, created_at: '2026-02-02T00:00:00Z' },
       ],
     });
     mockGetOctokit.mockReturnValue(octokit);
 
     mockArtifactClient.downloadArtifact.mockImplementation(async (_id, options) => {
+      expect(_id).toBe(2);
       const sessionsDir = path.join(options.path, 'sessions');
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.writeFileSync(path.join(sessionsDir, 'session.jsonl'), '');
@@ -429,7 +431,7 @@ describe('Codex Worker action', () => {
     setContext({ action: 'edited' });
 
     const octokit = createOctokit({
-      issueUrl: 'https://example.com/issues/19',
+      issueUrl: '',
       artifacts: [
         { id: 5, name: 'codex-worker-session-19', expired: false, created_at: '2026-02-01T00:00:00Z' },
       ],
@@ -448,7 +450,7 @@ describe('Codex Worker action', () => {
       'codex',
       expect.any(Array),
       expect.objectContaining({
-        input: expect.stringContaining('Issue updated: https://example.com/issues/19'),
+        input: expect.stringContaining('Issue updated. Continue the existing thread; do not restart.'),
       })
     );
     expect(exec.exec).toHaveBeenCalledWith(
@@ -635,6 +637,21 @@ describe('Codex Worker action', () => {
     expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
   });
 
+  test('logs reaction failures and continues', async () => {
+    setInputs({ issue_number: '31' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    octokit.rest.reactions.createForIssue.mockRejectedValue(new Error('nope'));
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(core.info).toHaveBeenCalledWith('Reaction failed: nope');
+    expect(octokit.rest.issues.createComment).toHaveBeenCalled();
+  });
+
   test('reports codex non-zero exit with raw output', async () => {
     setInputs({ issue_number: '23' });
     setContext({ action: 'opened' });
@@ -662,6 +679,61 @@ describe('Codex Worker action', () => {
     expect(body).toContain('codex failed');
     expect(mockArtifactClient.uploadArtifact).not.toHaveBeenCalled();
     existsSpy.mockRestore();
+  });
+
+  test('reports no output when codex fails and output missing', async () => {
+    setInputs({ issue_number: '32' });
+    setContext({ action: 'opened' });
+
+    mockCodexExit = 2;
+    mockCodexOutput = '';
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const existsSpy = jest.spyOn(fs, 'existsSync');
+    existsSpy.mockImplementation((filePath) => {
+      if (filePath === '/tmp/codex_output.txt') {
+        return false;
+      }
+      if (filePath === '/tmp/codex_response.txt') {
+        return false;
+      }
+      return true;
+    });
+
+    const originalReadFileSync = fs.readFileSync.bind(fs);
+    const readSpy = jest.spyOn(fs, 'readFileSync');
+    readSpy.mockImplementation((filePath, encoding) => {
+      if (filePath === '/tmp/codex_response.txt') {
+        throw new Error('missing');
+      }
+      return originalReadFileSync(filePath, encoding);
+    });
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    const [{ body }] = octokit.rest.issues.createComment.mock.calls[0];
+    expect(body).toContain('(no output)');
+    existsSpy.mockRestore();
+    readSpy.mockRestore();
+  });
+
+  test('fails when no session files exist to upload', async () => {
+    setInputs({ issue_number: '33' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    const readdirSpy = jest.spyOn(fs, 'readdirSync');
+    readdirSpy.mockReturnValue([]);
+
+    await runAction();
+    await waitFor(() => core.setFailed.mock.calls.length === 1);
+
+    expect(core.setFailed).toHaveBeenCalledWith('No Codex state files found for upload.');
+    readdirSpy.mockRestore();
   });
 
   test('falls back to raw output when no agent_message', async () => {
