@@ -5,7 +5,7 @@ GitHub Action (Node) that runs Codex CLI from issues and issue comments.
 ## What this does
 
 - Runs Codex on GitHub-hosted runners.
-- Persists Codex session state per issue via [GitHub Actions artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts).
+- Persists Codex session state per issue via [Workflow Artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts).
 - Posts responses back to the issue.
 - Can create branches/commits and open PRs when instructed.
 
