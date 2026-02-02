@@ -74,9 +74,8 @@ jobs:
 
 ## Notes
 
-- The runner filesystem is ephemeral. Only commits pushed to a branch persist.
-- For follow-up comments, a session artifact must exist or the run fails.
-- If Codex creates changes, it should commit and push before responding.
+- The action runs on an ephemeral runner. It tells Codex to commit and push any repo changes so work persists between runs.
+- Session artifacts are handled automatically by the action; follow‑up comments resume from the latest saved session.
 - `AGENTS.md` (if present in the repo root) is loaded automatically and will influence agent behavior.
 
 ## Files
