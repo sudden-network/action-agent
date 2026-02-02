@@ -482,6 +482,91 @@ describe('Codex Worker action', () => {
     );
   });
 
+  test('passes workspace-write sandbox to allow controlled edits', async () => {
+    setInputs({ issue_number: '26' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      'codex',
+      expect.arrayContaining(['--sandbox', 'workspace-write']),
+      expect.any(Object)
+    );
+  });
+
+  test('sets approval_policy to avoid interactive prompts', async () => {
+    setInputs({ issue_number: '27' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      'codex',
+      expect.arrayContaining(['-c', 'approval_policy="never"']),
+      expect.any(Object)
+    );
+  });
+
+  test('enables network access for workspace-write sandbox', async () => {
+    setInputs({ issue_number: '28' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      'codex',
+      expect.arrayContaining(['-c', 'sandbox_workspace_write.network_access=true']),
+      expect.any(Object)
+    );
+  });
+
+  test('inherits environment to expose workflow tokens', async () => {
+    setInputs({ issue_number: '29' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      'codex',
+      expect.arrayContaining(['-c', 'shell_environment_policy.inherit=all']),
+      expect.any(Object)
+    );
+  });
+
+  test('ignores default env excludes to keep auth vars available', async () => {
+    setInputs({ issue_number: '30' });
+    setContext({ action: 'opened' });
+
+    const octokit = createOctokit();
+    mockGetOctokit.mockReturnValue(octokit);
+
+    await runAction();
+    await waitFor(() => octokit.rest.issues.createComment.mock.calls.length === 1);
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      'codex',
+      expect.arrayContaining(['-c', 'shell_environment_policy.ignore_default_excludes=true']),
+      expect.any(Object)
+    );
+  });
+
   test('handles artifact download failure', async () => {
     setInputs({ issue_number: '20', comment_id: '303' });
     setContext({ action: 'created', comment: { body: 'continue' } });
