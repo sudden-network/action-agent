@@ -16,7 +16,6 @@ GitHub Action (Node) that runs Codex CLI from issues and issue comments.
 
 2) Repo settings (required for PR creation)
 - Settings → Actions → Workflow permissions → enable **“Allow GitHub Actions to create and approve pull requests.”**
-- The **Read and write** default is optional if your workflow sets explicit permissions (this one does).
 
 3) Caller workflow permissions
 - `contents: write` — push branches/commits back to the repo.
