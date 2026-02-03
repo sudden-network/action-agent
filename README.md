@@ -72,7 +72,7 @@ All examples assume you created a secret named `OPENAI_API_KEY`.
 
 ### Issue assistant
 
-Auto-triage issue threads: ask clarifying questions, detect duplicates, and keep context across follow-ups with `resume: true`.
+Auto-triage issue threads: ask clarifying questions, detect duplicates, and keep context across follow-ups.
 
 ```yaml
 name: action-agent-issues
