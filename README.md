@@ -185,7 +185,7 @@ When `resume: true` and the event is tied to an issue or pull request, action-ag
 Notes:
 - Resume is blocked on public repositories (the action throws).
 - Resume requires `actions: read` to list/download artifacts.
-- Artifact retention is controlled by your repo/org settings (see GitHub docs).
+- Artifact retention is controlled by your repo/org settings (see [Workflow Artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts)).
 
 ## Safety model
 
