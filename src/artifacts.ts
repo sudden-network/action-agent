@@ -2,29 +2,34 @@ import { DefaultArtifactClient } from '@actions/artifact';
 import { create } from '@actions/glob';
 import { context, getOctokit } from '@actions/github';
 import path from 'path';
-import { getIssueNumber, getSubjectType } from "./context";
+import { getIssueNumber, getSubjectType } from './context';
 
-type RepoArtifact = {
-  id: number;
-  name: string;
-  expired: boolean;
-  created_at?: string;
-  workflow_run?: { id?: number };
-};
+type RepoArtifact = Awaited<
+  ReturnType<ReturnType<typeof getOctokit>['rest']['actions']['listArtifactsForRepo']>
+>['data']['artifacts'][number];
 
 const getArtifactName = () => `action-agent-${getSubjectType()}-${getIssueNumber()}`;
 
 const listArtifactsByName = async (githubToken: string): Promise<RepoArtifact[]> => {
   const { owner, repo } = context.repo;
   const octokit = getOctokit(githubToken);
-  const artifacts = await octokit.paginate(octokit.rest.actions.listArtifactsForRepo, {
-    owner,
-    repo,
-    per_page: 100,
-    name: getArtifactName(),
-  });
 
-  return artifacts as RepoArtifact[];
+  const perPage = 100;
+
+  const fetchPage = async (page: number): Promise<RepoArtifact[]> => {
+    const { data } = await octokit.rest.actions.listArtifactsForRepo({
+      owner,
+      repo,
+      per_page: perPage,
+      page,
+      name: getArtifactName(),
+    });
+
+    if (page * perPage >= data.total_count) return data.artifacts;
+    return data.artifacts.concat(await fetchPage(page + 1));
+  };
+
+  return fetchPage(1);
 };
 
 const getLatestArtifact = async (githubToken: string): Promise<RepoArtifact | null> => {

@@ -7,7 +7,7 @@ const isErrorWithStatus = (error: unknown): error is { status?: number } => {
   return Boolean(error && typeof error === 'object' && 'status' in error);
 };
 
-const getErrorStatus = (error: unknown): number | undefined => {
+export const getErrorStatus = (error: unknown): number | undefined => {
   if (!isErrorWithStatus(error)) return undefined;
   const { status } = error;
   return typeof status === 'number' ? status : undefined;

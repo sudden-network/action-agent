@@ -12,7 +12,9 @@
     "@actions/core": "^1.11.1",
     "@actions/exec": "^1.1.1",
     "@actions/github": "^6.0.0",
-    "@actions/glob": "^0.4.0"
+    "@actions/glob": "^0.4.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
