@@ -17,7 +17,7 @@ const main = async (): Promise<void> => {
       `Event: ${context.eventName}`,
       `Subject: ${getSubjectType()} #${getIssueNumber()}`,
       `Workspace: ${process.env.GITHUB_WORKSPACE}`,
-      `Event path: ${process.env.GITHUB_EVENT_PATH}`,
+      `Event: ${await import(process.env.GITHUB_EVENT_PATH ?? "")}`, // TODO throw if it's undefined
       'Act autonomously and take action only if it is useful.',
     ].join('\n'), githubToken);
   } catch (error) {
