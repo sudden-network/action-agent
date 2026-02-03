@@ -1,4 +1,4 @@
-import * as core from '@actions/core';
+import { setFailed } from '@actions/core';
 import { bootstrapCli } from './codex';
 import { postComment } from './comment';
 import { readInputs } from './input';
@@ -10,7 +10,7 @@ const main = async (): Promise<void> => {
   } catch (error) {
     const message = `action-agent failed: ${error instanceof Error ? error.message : String(error)}`;
 
-    core.setFailed(message);
+    setFailed(message);
     await postComment(message);
   }
 };

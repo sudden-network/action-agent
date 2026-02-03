@@ -1,4 +1,4 @@
-import core from '@actions/core';
+import { getInput } from '@actions/core';
 
 interface Inputs {
   apiKey: string;
@@ -9,10 +9,10 @@ interface Inputs {
 }
 
 export const readInputs = (): Inputs => ({
-  apiKey: core.getInput('api_key', { required: true }),
-  githubToken: core.getInput('github_token', { required: true }),
-  cliVersion: core.getInput('cli_version') || undefined,
-  model: core.getInput('model'),
-  reasoningEffort: core.getInput('reasoning_effort'),
+  apiKey: getInput('api_key', { required: true }),
+  githubToken: getInput('github_token', { required: true }),
+  cliVersion: getInput('cli_version') || undefined,
+  model: getInput('model'),
+  reasoningEffort: getInput('reasoning_effort'),
 });
 

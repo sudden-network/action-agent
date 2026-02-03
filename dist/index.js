@@ -29923,38 +29923,19 @@ function wrappy (fn, cb) {
 /***/ }),
 
 /***/ 9724:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.bootstrapCli = void 0;
-const exec_1 = __importDefault(__nccwpck_require__(5236));
+const exec_1 = __nccwpck_require__(3190);
 const CODEX_VERSION = "0.93.0";
-const buildCommandError = (command, args, stdout, stderr, exitCode) => {
-    const trimmedStdout = stdout.trim();
-    const trimmedStderr = stderr.trim();
-    const details = [trimmedStdout, trimmedStderr].filter(Boolean).join('\n');
-    const base = `Command failed: ${[command, ...args].join(' ')}`;
-    if (!details) {
-        return `${base} (exit code ${exitCode})`;
-    }
-    return `${base}\n${details}`;
-};
-const runCommand = async (command, args, options = {}) => {
-    const result = await exec_1.default.getExecOutput(command, args, { ...options, ignoreReturnCode: true });
-    if (result.exitCode !== 0) {
-        throw new Error(buildCommandError(command, args, result.stdout, result.stderr, result.exitCode));
-    }
-};
 const install = async (version = CODEX_VERSION) => {
-    await runCommand('npm', ['install', '-g', `@openai/codex@${version}`]);
+    await (0, exec_1.runCommand)('npm', ['install', '-g', `@openai/codex@${version}`]);
 };
 const login = async (apiKey) => {
-    await runCommand('bash', ['-lc', 'printenv OPENAI_API_KEY | codex login --with-api-key'], {
+    await (0, exec_1.runCommand)('bash', ['-lc', 'printenv OPENAI_API_KEY | codex login --with-api-key'], {
         env: { ...process.env, OPENAI_API_KEY: apiKey },
     });
 };
@@ -29979,9 +29960,6 @@ const github_1 = __nccwpck_require__(3228);
 const github_context_1 = __nccwpck_require__(8886);
 const postComment = async (message) => {
     const issueNumber = (0, github_context_1.getIssueNumber)();
-    if (!issueNumber) {
-        return;
-    }
     const { owner, repo } = github_1.context.repo;
     const githubToken = (0, core_1.getInput)('github_token', { required: true });
     await (0, github_1.getOctokit)(githubToken).rest.issues.createComment({
@@ -29996,6 +29974,32 @@ exports.postComment = postComment;
 
 /***/ }),
 
+/***/ 3190:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.runCommand = void 0;
+const exec_1 = __nccwpck_require__(5236);
+const buildCommandError = (command, args, stdout, stderr, exitCode) => {
+    const trimmedStdout = stdout.trim();
+    const trimmedStderr = stderr.trim();
+    const details = [trimmedStdout, trimmedStderr].filter(Boolean).join('\n');
+    const base = `Command failed: ${[command, ...args].join(' ')}`;
+    return details ? `${base}\n${details}` : `${base} (exit code ${exitCode})`;
+};
+const runCommand = async (command, args, options = {}) => {
+    const result = await (0, exec_1.getExecOutput)(command, args, { ...options, ignoreReturnCode: true });
+    if (result.exitCode !== 0) {
+        throw new Error(buildCommandError(command, args, result.stdout, result.stderr, result.exitCode));
+    }
+};
+exports.runCommand = runCommand;
+
+
+/***/ }),
+
 /***/ 8886:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -30003,98 +30007,37 @@ exports.postComment = postComment;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getIssueNumber = void 0;
+const core_1 = __nccwpck_require__(7484);
 const github_1 = __nccwpck_require__(3228);
 const getIssueNumber = () => {
     const { issue, pull_request } = github_1.context.payload;
-    if (issue?.number) {
+    if (issue?.number)
         return issue.number;
-    }
-    if (pull_request?.number) {
+    if (pull_request?.number)
         return pull_request.number;
-    }
-    return null;
+    const message = 'Missing issue or pull request number in event payload.';
+    (0, core_1.error)(message);
+    throw new Error(message);
 };
 exports.getIssueNumber = getIssueNumber;
 
 
 /***/ }),
 
-/***/ 9407:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const core = __importStar(__nccwpck_require__(7484));
-const codex_1 = __nccwpck_require__(9724);
-const comment_1 = __nccwpck_require__(2246);
-const input_1 = __nccwpck_require__(3599);
-const main = async () => {
-    try {
-        const { cliVersion, apiKey } = (0, input_1.readInputs)();
-        await (0, codex_1.bootstrapCli)({ version: cliVersion, apiKey });
-    }
-    catch (error) {
-        const message = `action-agent failed: ${error instanceof Error ? error.message : String(error)}`;
-        core.setFailed(message);
-        await (0, comment_1.postComment)(message);
-    }
-};
-void main();
-
-
-/***/ }),
-
 /***/ 3599:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.readInputs = void 0;
-const core_1 = __importDefault(__nccwpck_require__(7484));
+const core_1 = __nccwpck_require__(7484);
 const readInputs = () => ({
-    apiKey: core_1.default.getInput('api_key', { required: true }),
-    githubToken: core_1.default.getInput('github_token', { required: true }),
-    cliVersion: core_1.default.getInput('cli_version') || undefined,
-    model: core_1.default.getInput('model'),
-    reasoningEffort: core_1.default.getInput('reasoning_effort'),
+    apiKey: (0, core_1.getInput)('api_key', { required: true }),
+    githubToken: (0, core_1.getInput)('github_token', { required: true }),
+    cliVersion: (0, core_1.getInput)('cli_version') || undefined,
+    model: (0, core_1.getInput)('model'),
+    reasoningEffort: (0, core_1.getInput)('reasoning_effort'),
 });
 exports.readInputs = readInputs;
 
@@ -32012,12 +31955,32 @@ module.exports = parseParams
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-/******/ 	
-/******/ 	// startup
-/******/ 	// Load entry module and return exports
-/******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(9407);
-/******/ 	module.exports = __webpack_exports__;
-/******/ 	
+var __webpack_exports__ = {};
+// This entry need to be wrapped in an IIFE because it need to be in strict mode.
+(() => {
+"use strict";
+var exports = __webpack_exports__;
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const core_1 = __nccwpck_require__(7484);
+const codex_1 = __nccwpck_require__(9724);
+const comment_1 = __nccwpck_require__(2246);
+const input_1 = __nccwpck_require__(3599);
+const main = async () => {
+    try {
+        const { cliVersion, apiKey } = (0, input_1.readInputs)();
+        await (0, codex_1.bootstrapCli)({ version: cliVersion, apiKey });
+    }
+    catch (error) {
+        const message = `action-agent failed: ${error instanceof Error ? error.message : String(error)}`;
+        (0, core_1.setFailed)(message);
+        await (0, comment_1.postComment)(message);
+    }
+};
+void main();
+
+})();
+
+module.exports = __webpack_exports__;
 /******/ })()
 ;
