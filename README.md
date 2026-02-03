@@ -51,7 +51,7 @@ Settings -> Actions -> Workflow permissions -> "Allow GitHub Actions to create a
 This action configures the GitHub MCP server for Codex and passes `GITHUB_TOKEN` to the Codex process.
 
 - MCP inherits the same workflow `permissions` you grant to `github_token`.
-- You do not need to enable `danger-full-access` for Codex to interact with GitHub.
+- You do not need to loosen the Codex sandbox for Codex to interact with GitHub.
 
 ## Quick start examples
 
@@ -190,7 +190,7 @@ Notes:
 ## Safety model
 
 - The action refuses to run unless the triggering `github.actor` has write access (admin/write/maintain) to the repo.
-- Codex runs with its default `codex exec` sandbox settings (no `danger-full-access`).
+- Codex runs with its default `codex exec` sandbox settings.
 - GitHub side effects are constrained by the workflow `permissions` you grant to `GITHUB_TOKEN`.
 
 ## Troubleshooting
