@@ -1,4 +1,4 @@
-import * as exec from '@actions/exec';
+import exec from '@actions/exec';
 
 const CODEX_VERSION = "0.93.0";
 

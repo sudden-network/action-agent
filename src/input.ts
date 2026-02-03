@@ -1,12 +1,12 @@
-import * as core from '@actions/core';
+import core from '@actions/core';
 
-type Inputs = {
+interface Inputs {
   apiKey: string;
   githubToken: string;
   cliVersion?: string;
   model: string;
   reasoningEffort: string;
-};
+}
 
 export const readInputs = (): Inputs => ({
   apiKey: core.getInput('api_key', { required: true }),
