@@ -70,7 +70,9 @@ This action configures the GitHub MCP server for Codex and passes `GITHUB_TOKEN`
 
 All examples assume you created a secret named `OPENAI_API_KEY`.
 
-### 1) Issue assistant (triage + resume)
+### 1) Issue assistant
+
+Auto-triage issue threads: ask clarifying questions, detect duplicates, and keep context across follow-ups with `resume: true`.
 
 ```yaml
 name: action-agent
@@ -99,9 +101,9 @@ jobs:
             If it's a duplicate, link the canonical issue and close this one.
 ```
 
-### 2) PR reviewer (code-aware)
+### 2) PR reviewer
 
-If you want Codex to read/modify repository files, you must checkout the repo.
+Review pull requests, respond to PR comments, and open follow-up PRs when you can fix something safely.
 
 ```yaml
 name: action-agent
@@ -123,25 +125,23 @@ jobs:
       issues: write
       actions: read # only if resume: true
     steps:
-      - uses: actions/checkout@v4 # https://github.com/actions/checkout
+      - uses: actions/checkout@v4 # required for Codex to read/modify repo files
       - uses: sudden-network/action-agent@main
         with:
           api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ github.token }}
-          model: gpt-5.1-codex-mini
-          reasoning_effort: low
           resume: true
           prompt: |
             Review this PR. Be concise and concrete.
             If you can fix something safely, open a follow-up PR with the change.
 ```
 
-### 3) Scheduled agent (maintenance / "night shift")
+### 3) Scheduled agent
 
-Resume does not apply to scheduled runs (no issue/PR thread), so keep it disabled.
+Run periodic maintenance or reporting (e.g. a daily PR triage summary).
 
 ```yaml
-name: action-agent-night-shift
+name: action-agent-scheduled
 
 on:
   schedule:
@@ -152,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      pull-requests: write
+      pull-requests: read
     steps:
       - uses: sudden-network/action-agent@main
         with:
@@ -162,7 +162,9 @@ jobs:
             Summarize the top 5 oldest PRs and open a single issue titled "Daily PR triage" with next steps.
 ```
 
-### 4) Manual dispatch (ad-hoc agent)
+### 4) Manual dispatch
+
+Kick off an agent run on demand with a one-off prompt (release notes, repo audit, triage a label, etc).
 
 ```yaml
 name: action-agent-dispatch
