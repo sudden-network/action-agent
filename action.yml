@@ -1,14 +1,20 @@
 name: action-agent
 
-description: Run Codex CLI for issue/issue_comment threads.
+description: Run Codex CLI for GitHub events like issues, pull requests, comments, schedules, and manual dispatches.
 
 inputs:
+  api_key:
+    description: Model provider API key
+    required: true
+  github_token:
+    description: GitHub token used for GitHub API + MCP
+    required: true
   model:
-    description: Codex model override (optional)
+    description: Codex model override
     required: false
     default: ""
   reasoning_effort:
-    description: Codex reasoning effort override (optional)
+    description: Codex reasoning effort override
     required: false
     default: ""
   prompt:
@@ -18,12 +24,6 @@ inputs:
   resume:
     description: Enable session resume across runs
     required: false
-  api_key:
-    description: Model provider API key
-    required: true
-  github_token:
-    description: GitHub token used for API + gh
-    required: true
 
 runs:
   using: node20

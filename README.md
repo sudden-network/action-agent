@@ -1,52 +1,65 @@
 # action-agent
 
-GitHub Action (Node) that runs Codex CLI from issues and issue comments.
+Run the OpenAI Codex CLI as a GitHub Action for any workflow trigger (issues, pull requests, comments, schedule, workflow_dispatch, etc.).
 
-## What this does
+This action is intentionally thin:
+- Installs a pinned `@openai/codex` CLI version.
+- Logs in with your `api_key`.
+- Configures GitHub MCP so Codex can interact with GitHub using the workflow `github_token` (scoped by your workflow `permissions`).
+- Optionally resumes a per-issue / per-PR Codex session via GitHub [Workflow Artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts).
+- Runs `codex exec` with a prompt built from the GitHub event context + your optional `prompt` input.
 
-- Runs Codex on GitHub-hosted runners.
-- Optionally resumes Codex session state per issue via [Workflow Artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts).
-- Posts responses back to the issue.
-- Can create branches/commits and open PRs when instructed.
-- Optional GitHub MCP integration for repo/issue/PR access from Codex.
+## What you can build with this
 
-## Resume
+Because you can attach `action-agent` to any workflow trigger and provide a tailored `prompt`, you can build focused agents, for example:
+- Issue auto-triage: ask the right questions, label, detect duplicates, close with references.
+- PR reviews: summarize changes, identify risks, propose fixes, open follow-up PRs.
+- Repo maintenance on a schedule: weekly backlog grooming, stale PR nudges, summaries, "what changed this week" digests.
+- One-off automations via workflow dispatch: "triage everything with label X", "draft release notes", "summarize open incidents".
 
-Resume uses [Workflow Artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts).
+## Inputs
 
-- Resume is only enabled on private repos to avoid exposing artifacts.
-- Artifacts are retained for 7 days, so conversations expire after that retention window.
+| Input | Required | Description |
+| --- | --- | --- |
+| `api_key` | yes | Model provider API key (used for `codex login`). |
+| `github_token` | yes | GitHub token used by the action (API + artifacts) and passed to Codex as `GITHUB_TOKEN` for MCP. |
+| `model` | no | Codex model override (passed to `codex exec --model`). |
+| `reasoning_effort` | no | Codex reasoning effort override (passed via `-c model_reasoning_effort=...`). |
+| `prompt` | no | Extra instructions appended to the built-in prompt. |
+| `resume` | no | Enable per-issue/per-PR session resume (`true`/`false`). Default: `false`. |
 
-## Agent behavior
+## Configuring the agent
 
-- The agent identifies as `action-agent` running inside a GitHub Actions runner.
-- `AGENTS.md` (if present in the repo root) is loaded automatically and will influence agent behavior.
+- Use `prompt` for per-workflow instructions (triage rules, review style, escalation policy, etc).
+- If your repo has an `AGENTS.md` at the repo root, Codex will pick it up and use it as persistent guidance across runs.
 
-## MCP (GitHub MCP server)
+## Permissions (job-level)
 
-The action configures the GitHub MCP server automatically and passes the same `github_token` you provide to the action.
+This action relies on the workflow `GITHUB_TOKEN`. Grant only what you need at the job level.
 
-- MCP permissions are inherited from the workflow `permissions` block.
-- If MCP tools fail with “Resource not accessible by integration,” add the missing permission to the workflow.
+Common permissions:
+- `issues: write` to post issue/PR conversation comments and error comments.
+- `pull-requests: write` to comment on PRs and open PRs.
+- `contents: write` to push branches/commits.
+- `actions: read` to download/list artifacts (required only when `resume: true`).
 
-## Permissions
+Note: GitHub supports `permissions` at workflow or job level, not per-step.
 
-- `contents: write` — push branches/commits back to the repo.
-- `issues: write` — post error comments and use MCP to read/write issues.
-- `pull-requests: write` — create or comment on PRs.
-- `actions: read` — list/download artifacts for resume (only when resume is enabled).
+If you want the agent to open PRs, also enable the repo setting:
+Settings -> Actions -> Workflow permissions -> "Allow GitHub Actions to create and approve pull requests."
 
-## Requirements
+## GitHub MCP (how the agent talks to GitHub)
 
-1) OpenAI API key
-- Add `OPENAI_API_KEY` as a secret in the target repo or org.
+This action configures the GitHub MCP server for Codex and passes `GITHUB_TOKEN` to the Codex process.
 
-2) Repo settings (required for PR creation)
-- Settings → Actions → Workflow permissions → enable **“Allow GitHub Actions to create and approve pull requests.”**
+- MCP inherits the same workflow `permissions` you grant to `github_token`.
+- You do not need to enable `danger-full-access` for Codex to interact with GitHub.
 
-## Quick start (caller workflow)
+## Quick start examples
 
-Create a workflow in the target repo, e.g. `.github/workflows/action-agent-issue.yml`:
+All examples assume you created a secret named `OPENAI_API_KEY`.
+
+### 1) Issue assistant (triage + resume)
 
 ```yaml
 name: action-agent
@@ -57,27 +70,133 @@ on:
   issue_comment:
     types: [created, edited]
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: read # only if resume is enabled
-
 jobs:
-  action-agent:
+  agent:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      actions: read # required only because resume: true
     steps:
-      - name: Run action-agent
-        uses: sudden-network/action-agent@main
+      - uses: sudden-network/action-agent@main
         with:
           api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ github.token }}
-          # Optional:
-          # model: gpt-5.1-codex-mini
-          # reasoning_effort: low
-          # resume: true
+          resume: true
+          prompt: |
+            Triage this thread.
+            Ask clarifying questions if needed.
+            If it's a duplicate, link the canonical issue and close this one.
 ```
 
-## Notes
+### 2) PR reviewer (code-aware)
 
-- The action runs on an ephemeral runner. It tells Codex to commit and push any repo changes so work persists between runs.
+If you want Codex to read/modify repository files, you must checkout the repo.
+
+```yaml
+name: action-agent
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review]
+  issue_comment:
+    types: [created, edited] # PR conversation comments also come through here
+  pull_request_review_comment:
+    types: [created, edited] # inline comments
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read # only if resume: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sudden-network/action-agent@main
+        with:
+          api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ github.token }}
+          model: gpt-5.1-codex-mini
+          reasoning_effort: low
+          resume: true
+          prompt: |
+            Review this PR. Be concise and concrete.
+            If you can fix something safely, open a follow-up PR with the change.
+```
+
+### 3) Scheduled agent (maintenance / "night shift")
+
+Resume does not apply to scheduled runs (no issue/PR thread), so keep it disabled.
+
+```yaml
+name: action-agent-night-shift
+
+on:
+  schedule:
+    - cron: "0 9 * * 1-5" # weekdays
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: sudden-network/action-agent@main
+        with:
+          api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: |
+            Summarize the top 5 oldest PRs and open a single issue titled "Daily PR triage" with next steps.
+```
+
+### 4) Manual dispatch (ad-hoc agent)
+
+```yaml
+name: action-agent-dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: Instructions for this run (appended to the built-in prompt)
+        required: true
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: sudden-network/action-agent@main
+        with:
+          api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: ${{ inputs.prompt }}
+```
+
+## Resume (persistent sessions)
+
+When `resume: true` and the event is tied to an issue or pull request, action-agent:
+- Downloads the latest Workflow Artifact for that thread (`action-agent-issue-<n>` or `action-agent-pr-<n>`).
+- Restores it into `~/.codex` before running Codex.
+- Uploads the updated `~/.codex` after the run (with `auth.json` and `tmp/` removed).
+
+Notes:
+- Resume is blocked on public repositories (the action throws).
+- Resume requires `actions: read` to list/download artifacts.
+- Artifact retention is controlled by your repo/org settings (see GitHub docs).
+
+## Safety model
+
+- The action refuses to run unless the triggering `github.actor` has write access (admin/write/maintain) to the repo.
+- Codex runs with its default `codex exec` sandbox settings (no `danger-full-access`).
+- GitHub side effects are constrained by the workflow `permissions` you grant to `GITHUB_TOKEN`.
+
+## Troubleshooting
+
+- `403: Resource not accessible by integration` typically means missing workflow permissions (`contents: write`, `pull-requests: write`, `issues: write`, etc.).
+- `Resume is enabled but the workflow lacks actions: read permission.` means you set `resume: true` but didn't grant `actions: read`.
+- If the workflow succeeds but you don't see a comment, check the run logs. By design, Codex decides when/where to comment; the built-in prompt encourages commenting only when useful.
