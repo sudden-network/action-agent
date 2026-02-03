@@ -79,7 +79,7 @@ export const runCodex = async (prompt: string) => {
   await runCommand(
     'codex',
     ['exec', 'resume', '--last', '--skip-git-repo-check', prompt],
-    { env: { [MCP_TOKEN_ENV_NAME]: inputs.githubToken } },
+    { env: { ...process.env, [MCP_TOKEN_ENV_NAME]: inputs.githubToken } },
     'stderr',
   );
 };
