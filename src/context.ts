@@ -9,6 +9,8 @@ export const getSubjectType = (): 'issue' | 'pr' => {
   throw new Error("Unable to get subject type");
 };
 
+export const isIssueOrPullRequest = () => Boolean(context.payload.issue || context.payload.pull_request);
+
 export const getIssueNumber = (): number => {
   const { issue, pull_request } = context.payload;
 

@@ -3,7 +3,7 @@ import { getIssueNumber } from './context';
 import { inputs } from './input';
 import { isPermissionError } from './permissions';
 
-export const postComment = async (message: string): Promise<void> => {
+export const postComment = async (comment: string): Promise<void> => {
   const { owner, repo } = context.repo;
 
   try {
@@ -11,10 +11,19 @@ export const postComment = async (message: string): Promise<void> => {
       owner,
       repo,
       issue_number: getIssueNumber(),
-      body: message,
+      body: comment,
     });
   } catch (error) {
     if (isPermissionError(error)) return;
     throw error;
   }
+};
+
+export const postErrorComment = async (comment: string): Promise<void> => {
+  await postComment(`
+action-agent failed:
+\`\`\`
+${comment}
+\`\`\`
+    `.trim())
 };

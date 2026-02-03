@@ -1,6 +1,7 @@
 import { setFailed } from '@actions/core';
 import { bootstrap, runCodex, teardown } from './codex';
-import { postComment } from './comment';
+import { postErrorComment } from './comment';
+import { isIssueOrPullRequest } from './context';
 import { ensurePermission } from './permissions';
 import { buildPrompt } from './prompt';
 
@@ -15,12 +16,10 @@ const main = async (): Promise<void> => {
 
     setFailed(`action-agent failed: ${message}`);
 
-    await postComment(`
-action-agent failed:
-\`\`\`
-${message}
-\`\`\`
-    `.trim());
+    if (isIssueOrPullRequest()) {
+      await postErrorComment(message);
+    }
+
   }
 };
 
