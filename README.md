@@ -125,7 +125,8 @@ jobs:
       issues: write
       actions: read # only if resume: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # required for Codex to read/modify repo files
+
       - uses: sudden-network/action-agent@main
         with:
           api_key: ${{ secrets.OPENAI_API_KEY }}
