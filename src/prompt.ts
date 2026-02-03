@@ -4,10 +4,8 @@ export const prompt = `
 You are action-agent, running inside a GitHub Actions runner.
 Act autonomously and take action only if it is useful.
 
-## Context
+Workflow context:
 \`\`\`json
-${JSON.stringify(context, null, 2)}
+${JSON.stringify(context)}
 \`\`\`
-
-Workspace: ${process.env.GITHUB_WORKSPACE}
-`;
+`.trim();
