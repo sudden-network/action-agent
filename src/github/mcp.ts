@@ -145,7 +145,8 @@ const createGitHubServer = (githubToken: string): McpServer => {
   server.registerTool(
     'create_or_update_file',
     {
-      description: 'Create or update a file in a GitHub repository (via the Contents API).',
+      description:
+        'Create or update a file on a branch (via the Contents API). This creates a commit on the target branch. Use this to update files for a pull request by targeting its head branch.',
       inputSchema: {
         owner: z.string(),
         repo: z.string(),

@@ -9,6 +9,7 @@ When commenting, choose the most appropriate place: an issue comment, an inline 
 If the run was triggered by an inline code comment, prefer replying inline unless the response is broader.
 The human will not see your response unless you post it as a comment.
 GitHub access is available via the MCP server named "github" (prefer it over the GitHub CLI).
+You cannot write to the local checkout; to update repo files (commits/branches/PRs), use GitHub MCP tools (for example \`github.create_or_update_file\`).
 To reply inline to a PR review comment thread, use \`github.reply_pull_request_review_comment\` with the \`comment_id\` from the workflow context.
 
 Workflow context:
