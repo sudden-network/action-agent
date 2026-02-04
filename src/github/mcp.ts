@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID } from 'crypto';
 import http from 'http';
-import { getOctokit } from '@actions/github';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
+import { getOctokit } from './octokit';
 
 interface RunningMcpServer {
   url: Promise<string>;
@@ -22,8 +22,7 @@ const readJsonBody = async (req: http.IncomingMessage): Promise<unknown> => {
   return JSON.parse(raw);
 };
 
-const createGitHubServer = (githubToken: string): McpServer => {
-  const octokit = getOctokit(githubToken);
+const createGitHubServer = (): McpServer => {
   const server = new McpServer({ name: 'action-agent-github', version: '0.1.0' });
 
   server.registerTool(
@@ -37,7 +36,7 @@ const createGitHubServer = (githubToken: string): McpServer => {
       },
     },
     async ({ route, parameters }) => {
-      const response = await octokit.request(route, parameters ?? {});
+      const response = await getOctokit().request(route, parameters ?? {});
 
       return {
         content: [
@@ -60,7 +59,7 @@ const createGitHubServer = (githubToken: string): McpServer => {
   return server;
 };
 
-const startGitHubMcpServer = async (githubToken: string) => {
+const startGitHubMcpServer = async () => {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const authToken = randomBytes(32).toString('hex');
 
@@ -112,7 +111,7 @@ const startGitHubMcpServer = async (githubToken: string) => {
         transports.delete(transport.sessionId);
       };
 
-      const server = createGitHubServer(githubToken);
+      const server = createGitHubServer();
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
       return;
@@ -176,8 +175,8 @@ const startGitHubMcpServer = async (githubToken: string) => {
   };
 };
 
-export const githubMcpServer = (githubToken: string): RunningMcpServer => {
-  const serverPromise = startGitHubMcpServer(githubToken);
+export const githubMcpServer = (): RunningMcpServer => {
+  const serverPromise = startGitHubMcpServer();
   return {
     url: serverPromise.then((server) => server.url),
     close: () => serverPromise.then((server) => server.close()),

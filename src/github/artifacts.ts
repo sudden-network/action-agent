@@ -1,8 +1,10 @@
 import { DefaultArtifactClient } from '@actions/artifact';
 import { create } from '@actions/glob';
-import { context, getOctokit } from '@actions/github';
+import { context } from '@actions/github';
 import path from 'path';
 import { getIssueNumber, getSubjectType } from './context';
+import { inputs } from "./input";
+import { getOctokit } from './octokit';
 
 type RepoArtifact = Awaited<
   ReturnType<ReturnType<typeof getOctokit>['rest']['actions']['listArtifactsForRepo']>
@@ -10,14 +12,12 @@ type RepoArtifact = Awaited<
 
 const getArtifactName = () => `action-agent-${getSubjectType()}-${getIssueNumber()}`;
 
-const listArtifactsByName = async (githubToken: string): Promise<RepoArtifact[]> => {
+const listArtifactsByName = async (): Promise<RepoArtifact[]> => {
   const { owner, repo } = context.repo;
-  const octokit = getOctokit(githubToken);
-
   const perPage = 100;
 
   const fetchPage = async (page: number): Promise<RepoArtifact[]> => {
-    const { data } = await octokit.rest.actions.listArtifactsForRepo({
+    const { data } = await getOctokit().rest.actions.listArtifactsForRepo({
       owner,
       repo,
       per_page: perPage,
@@ -32,8 +32,8 @@ const listArtifactsByName = async (githubToken: string): Promise<RepoArtifact[]>
   return fetchPage(1);
 };
 
-const getLatestArtifact = async (githubToken: string): Promise<RepoArtifact | null> => {
-  const artifacts = await listArtifactsByName(githubToken);
+const getLatestArtifact = async (): Promise<RepoArtifact | null> => {
+  const artifacts = await listArtifactsByName();
   const candidates = artifacts.filter((artifact) => !artifact.expired);
 
   return candidates.reduce<RepoArtifact | null>((latest, artifact) => {
@@ -47,11 +47,10 @@ const getLatestArtifact = async (githubToken: string): Promise<RepoArtifact | nu
 };
 
 export const downloadLatestArtifact = async (
-  githubToken: string,
   downloadPath: string,
 ): Promise<RepoArtifact | null> => {
   const { owner, repo } = context.repo;
-  const latest = await getLatestArtifact(githubToken);
+  const latest = await getLatestArtifact();
   const workflowRunId = latest?.workflow_run?.id;
 
   if (!latest) return null;
@@ -60,7 +59,7 @@ export const downloadLatestArtifact = async (
   await new DefaultArtifactClient().downloadArtifact(latest.id, {
     path: downloadPath,
     findBy: {
-      token: githubToken,
+      token: inputs.githubToken,
       repositoryOwner: owner,
       repositoryName: repo,
       workflowRunId,
@@ -70,17 +69,8 @@ export const downloadLatestArtifact = async (
   return latest;
 };
 
-export const uploadArtifact = async (rootDirectory: string, patterns: string[]): Promise<void> => {
-  const root = path.resolve(rootDirectory);
+export const uploadArtifact = async (rootDirectory: string): Promise<void> => {
+  const globber = await create(`${path.resolve(rootDirectory)}/**/*`, { matchDirectories: false });
 
-  const globber = await create(
-    patterns.map((pattern) => path.join(root, pattern)).join('\n'),
-    { matchDirectories: false },
-  );
-
-  const files = await globber.glob();
-
-  if (files.length === 0) return;
-
-  await new DefaultArtifactClient().uploadArtifact(getArtifactName(), files, rootDirectory);
+  await new DefaultArtifactClient().uploadArtifact(getArtifactName(), await globber.glob(), rootDirectory);
 };

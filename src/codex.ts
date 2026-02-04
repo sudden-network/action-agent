@@ -11,7 +11,8 @@ import { isPermissionError } from './github/error';
 const CODEX_VERSION = '0.93.0';
 const CODEX_DIR = path.join(os.homedir(), '.codex');
 const CODEX_CONFIG_PATH = path.join(CODEX_DIR, 'config.toml');
-const mcpServer = githubMcpServer(inputs.githubToken);
+const CODEX_SESSIONS_PATH = path.join(CODEX_DIR, 'sessions');
+const mcpServer = githubMcpServer();
 
 const ensureDir = (dir: string) => fs.mkdirSync(dir, { recursive: true });
 
@@ -32,9 +33,9 @@ const configureMcp = async () => {
 
 const restoreSession = async () => {
   if (!shouldResume()) return;
-  ensureDir(CODEX_DIR);
+  ensureDir(CODEX_SESSIONS_PATH);
   try {
-    await downloadLatestArtifact(inputs.githubToken, CODEX_DIR);
+    await downloadLatestArtifact(CODEX_SESSIONS_PATH);
   } catch (error) {
     if (isPermissionError(error)) {
       throw new Error('Resume is enabled but the workflow lacks `actions: read` permission.');
@@ -45,7 +46,7 @@ const restoreSession = async () => {
 
 const persistSession = async () => {
   if (!shouldResume()) return;
-  await uploadArtifact(CODEX_DIR, ['sessions/**']);
+  await uploadArtifact(CODEX_SESSIONS_PATH);
 };
 
 const install = async () => {

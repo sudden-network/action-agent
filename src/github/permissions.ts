@@ -1,13 +1,12 @@
-import { context, getOctokit } from '@actions/github';
-import { inputs } from './input';
+import { context } from '@actions/github';
 import { isNotFoundError } from './error';
+import { getOctokit } from './octokit';
 
 export const fetchPermission = async (): Promise<string> => {
   const { actor, repo: { owner, repo } } = context;
-  const octokit = getOctokit(inputs.githubToken);
 
   try {
-    const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+    const { data } = await getOctokit().rest.repos.getCollaboratorPermissionLevel({
       owner,
       repo,
       username: actor,
