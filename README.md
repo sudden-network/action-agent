@@ -49,6 +49,11 @@ Settings -> Actions -> Workflow permissions -> "Allow GitHub Actions to create a
 
 ## Persistent sessions
 
+When you enable `resume`, the agent doesn't start from scratch on every new comment or update. Instead, it resumes the previous Codex session for the same issue or pull request, so it can:
+- Keep the full context of an evolving thread (requirements, decisions, past suggestions).
+- Reference earlier comments naturally, even after many follow-ups.
+- Stay consistent across multiple workflow runs (for example: issue opened -> clarifying Q&A -> later comment -> later edit -> etc.).
+
 When `resume: true` and the event is tied to an issue or pull request, action-agent:
 - Downloads the latest Workflow Artifact for that thread (`action-agent-issue-<n>` or `action-agent-pr-<n>`).
 - Restores it into `~/.codex` before running Codex.
