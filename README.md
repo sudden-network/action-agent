@@ -70,7 +70,7 @@ This action starts a local MCP server that exposes GitHub tools to Codex.
 
 - MCP inherits the same workflow `permissions` you grant to `github_token`.
 - The `github_token` is held by the action process (not exposed directly to Codex).
-- For advanced cases, use `github.octokit_request` to call arbitrary GitHub REST endpoints.
+- Use `github.octokit_request` to call GitHub REST endpoints.
 
 ## Quick start examples
 
