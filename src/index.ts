@@ -7,7 +7,10 @@ import { buildPrompt } from './prompt';
 
 const main = async (): Promise<void> => {
   try {
-    await Promise.all([ensurePermission(), bootstrap()]);
+    await Promise.all([
+      ensurePermission(),
+      bootstrap(),
+    ]);
     await runCodex(buildPrompt());
     await teardown();
   } catch (error) {
