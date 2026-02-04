@@ -6,8 +6,8 @@ import { inputs } from './github/input';
 const PROMPT_TEMPLATE = fs.readFileSync(path.join(__dirname, 'PROMPT.md'), 'utf8');
 
 export const buildPrompt = (): string => {
-  return PROMPT_TEMPLATE.replace('{{workflow_context}}', JSON.stringify(context)).replace(
-    '{{extra_prompt}}',
-    inputs.prompt ?? 'Act autonomously and take action only if it is useful.',
-  ).trim();
+  return PROMPT_TEMPLATE
+    .replace('{{workflow_context}}', JSON.stringify(context))
+    .replace('{{extra_prompt}}', inputs.prompt ?? '')
+    .trim();
 };
