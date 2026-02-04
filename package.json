@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit && ncc build src/index.ts -o dist",
+    "build": "tsc -p tsconfig.json --noEmit && ncc build src/index.ts -o dist && node -e \"require('fs').copyFileSync('src/PROMPT.md','dist/PROMPT.md')\"",
     "test": "jest"
   },
   "dependencies": {
