@@ -203,9 +203,10 @@ jobs:
 ## Security
 
 - The action refuses to run unless the triggering `github.actor` has write access (admin/write/maintain) to the repo.
-- The action also blocks runs when the content author association is not OWNER, MEMBER, or COLLABORATOR (when present in the payload).
-- GitHub side effects are constrained by the workflow `permissions` you grant to `GITHUB_TOKEN` (grant the minimum needed).
-- Codex runs in `read-only` sandbox mode.
+- The action also blocks runs when the content author association is not `OWNER`, `MEMBER`, or `COLLABORATOR` (when present in the payload).
+- GitHub side effects are constrained by the workflow `permissions` you grant to `GITHUB_TOKEN`.
+- By default, `GITHUB_TOKEN` is scoped to the repository running the workflow: it cannot write to other repositories unless you supply a broader token with cross-repo access.
+- Codex runs in `read-only` sandbox mode: it can read files but cannot write to disk or access the network, even from shell commands.
 
 ## Troubleshooting
 
