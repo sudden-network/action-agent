@@ -1,12 +1,12 @@
 # action-agent
 
-Unlock a wide range of possibilities by attaching a programmable agent to any [workflow trigger](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows) (issues, pull requests, comments, schedule, dispatch, etc.).
+Run programmable agents on any [GitHub Workflow](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows) (issues, pull requests, comments, schedule, dispatch, etc.) to unlock a wide range of automation.
 
 ## Persistent sessions
 
 Sessions persist per issue and pull request, so the agent picks up where it left off across new comments, edits, and new commits.
 
-On pull requests, this makes long review threads practical: the agent can track what it already reviewed, follow up on changes, and stay consistent across a long back-and-forth.
+This makes iterative work practical: the agent remembers what it already covered, reacts to changes, and stays consistent throughout the process.
 
 ## What you can build with this
 
@@ -24,9 +24,9 @@ Have a useful workflow? [Share your recipe](https://github.com/sudden-network/ac
 
 | Input | Required | Description |
 | --- | --- | --- |
-| `api_key` | yes | Model provider API key. |
-| `github_token` | yes | GitHub token used by the action. |
 | `agent` | no | Agent to run (`codex` default). |
+| `agent_api_key` | yes | Agent API key. |
+| `github_token` | yes | GitHub token used by the action. |
 | `model` | no | Agent model override (for Codex, append reasoning effort with /, e.g. `gpt-5.2-codex/xhigh`) |
 | `prompt` | no | Additional instructions for the agent. |
 | `resume` | no | Enable session persistence. Default: `false`. |
@@ -36,8 +36,8 @@ Have a useful workflow? [Share your recipe](https://github.com/sudden-network/ac
 
 ## Configuring the agent
 
-- Use `prompt` for per-workflow instructions (triage rules, review style, escalation policy, etc).
-- If you want repo-level instructions, add an `AGENTS.md` at the repo root and run this action after `actions/checkout` so the agent can read it.
+- Use `prompt` for per-workflow instructions.
+- If you want repo-level instructions, add an [AGENTS.md](https://agents.md/) file and run this action after `actions/checkout` so the agent can read it.
 
 ## Permissions
 
@@ -57,9 +57,9 @@ Settings -> Actions -> Workflow permissions -> "Allow GitHub Actions to create a
 
 ## Security
 
-- The `GITHUB_TOKEN` is held by the action process (not exposed directly to the agent).
+- The `GITHUB_TOKEN` is held by the action process and is not exposed directly to the agent.
 - The action only runs on private repositories and fails on public/unknown visibility.
-- The action refuses to run unless the triggering `github.actor` has write access (admin/write/maintain) to the repo.
+- The action refuses to run unless the triggering `github.actor` has write access to the repo.
 - GitHub side effects are constrained by the workflow `permissions` you grant to `GITHUB_TOKEN`.
 - By default, `GITHUB_TOKEN` is scoped to the repository running the workflow: it cannot write to other repositories unless you supply a broader token with cross-repo access.
 - Agents run in `read-only` sandbox mode: they can read files but cannot write to disk or access the network, even from shell commands.

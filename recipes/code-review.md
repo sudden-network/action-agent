@@ -30,7 +30,7 @@ jobs:
       - name: Run action-agent
         uses: sudden-network/action-agent@main
         with:
-          api_key: ${{ secrets.OPENAI_API_KEY }}
+          agent_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ github.token }}
           resume: true
           prompt: |

@@ -64,7 +64,7 @@ const login = async () => {
   await runCommand(
     'codex',
     ['login', '--with-api-key'],
-    { input: Buffer.from(inputs.apiKey, 'utf8') },
+    { input: Buffer.from(inputs.agentApiKey, 'utf8') },
   );
 };
 
