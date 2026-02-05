@@ -1,4 +1,4 @@
-name: Repo Agent
+name: Workflow Agent Action
 author: sudden-network
 
 description: Run programmable agents on any GitHub Workflow to enable automation across your repo.
