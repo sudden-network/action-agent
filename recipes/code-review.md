@@ -9,7 +9,7 @@ name: code-review
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, ready_for_review]
+    types: [opened, reopened, edited, synchronize, ready_for_review]
   pull_request_review_comment:
     types: [created, edited] # inline comments
   issue_comment:
@@ -17,6 +17,7 @@ on:
 
 jobs:
   code-review:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read # read PR diff and files
