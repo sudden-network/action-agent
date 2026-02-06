@@ -12,6 +12,10 @@ permissions:
   issues: write
   actions: read
 
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   code-review:
     if: ${{ github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository }}
