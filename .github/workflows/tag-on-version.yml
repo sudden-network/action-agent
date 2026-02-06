@@ -1,4 +1,4 @@
-name: tag-on-version
+name: tag-and-release
 
 on:
   push:
@@ -9,10 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  tag:
+  tag-and-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Tag via workflow-agent
+      - name: Tag and release via workflow-agent
         uses: sudden-network/workflow-agent@v1
         with:
           agent_api_key: ${{ secrets.OPENAI_API_KEY }}
