@@ -1,3 +1,10 @@
+# Tag and release
+
+Keep the major tag (e.g. `v1`) pointing at the latest main commit, and publish a release when `package.json` version changes.
+
+## Workflow
+
+```yaml
 name: tag-and-release
 
 on:
@@ -5,20 +12,19 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   tag-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create tags/releases
     steps:
-      - name: Tag and release via workflow-agent
+      - name: Tag via workflow-agent
         uses: sudden-network/workflow-agent@v1
         with:
           agent_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ github.token }}
           prompt: |
-            Goal: on every push to main, move v1 to the current commit. If package.json version changed, create v{version} and a GitHub release for it.
+            Goal: on every push to main, move v{major} to the current commit. If package.json version changed, create v{version} and a GitHub release for it.
 
             Inputs:
             - owner: ${{ github.repository_owner }}
@@ -27,18 +33,22 @@ jobs:
             - after_sha: ${{ github.sha }}
 
             Steps:
-            1) Fetch `package.json` at both SHAs (before_sha and after_sha) via:
-               GET /repos/{owner}/{repo}/contents/package.json?ref={sha}
-               Read the `version` field from the file.
+            1) Fetch `package.json` at after_sha:
+               GET /repos/{owner}/{repo}/contents/package.json?ref={after_sha}
+               Read `version` as {version} and derive {major} (first number before the dot).
 
-            2) If versions differ, check if tag `v{version}` (full version, e.g. 1.2.3) exists via:
+            2) Fetch `package.json` at before_sha:
+               GET /repos/{owner}/{repo}/contents/package.json?ref={before_sha}
+               Read `version` as {before_version}.
+
+            3) If versions differ, check if tag `v{version}` (full version, e.g. 1.2.3) exists via:
                GET /repos/{owner}/{repo}/git/ref/tags/v{version}
                If it does not exist, create it with:
                POST /repos/{owner}/{repo}/git/refs
                { "ref": "refs/tags/v{version}", "sha": "{after_sha}" }
                If the tag already exists, skip release creation.
 
-            3) If you created a new `v{version}` tag, create a release:
+            4) If you created a new `v{version}` tag, create a release:
                - Check if release exists:
                  GET /repos/{owner}/{repo}/releases/tags/v{version}
                  If it exists, stop.
@@ -54,9 +64,10 @@ jobs:
                  { "tag_name": "v{version}", "name": "v{version}", "body": "<generated notes>" }
                - If a release for v{version} already exists, do nothing.
 
-            4) Move `v1` to the current SHA:
-               PATCH /repos/{owner}/{repo}/git/refs/tags/v1
+            5) Move `v{major}` to the current SHA:
+               PATCH /repos/{owner}/{repo}/git/refs/tags/v{major}
                { "sha": "{after_sha}", "force": true }
                If the ref is missing, create it with POST /repos/{owner}/{repo}/git/refs.
 
             Log what you did.
+```
