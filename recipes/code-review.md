@@ -40,4 +40,5 @@ jobs:
             If you find issues, leave inline comments when appropriate and propose concrete fixes.
             Only open follow-up issues when explicitly requested.
             If there is nothing to add, react with a thumbs up on the PR itself.
+            If a change resolves a previous review comment, resolve that thread.
 ```
