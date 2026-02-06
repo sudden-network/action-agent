@@ -12,6 +12,7 @@ You can attach an agent to any workflow and provide a custom prompt to unlock a 
 - [Security audit](recipes/security-audit.md) - Run periodic code security reviews and file issues.
 - [Tag and release](recipes/tag-and-release.md) - Tag and publish releases when versions change.
 - [Todo to issues](recipes/todo-to-issue.md) - Create issues for new TODOs introduced on the default branch.
+- [Version bump](recipes/version-bump.md) - Suggest version bumps based on PR impact.
 
 Have a useful workflow? [Share your recipe](https://github.com/sudden-network/workflow-agent/new/main/recipes?filename=recipe.yml)
 
