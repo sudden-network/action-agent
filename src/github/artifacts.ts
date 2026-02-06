@@ -3,14 +3,19 @@ import { create } from '@actions/glob';
 import { context } from '@actions/github';
 import path from 'path';
 import { getIssueNumber, getSubjectType } from './context';
-import { inputs } from "./input";
+import { inputs } from './input';
 import { getOctokit } from './octokit';
 
 type RepoArtifact = Awaited<
   ReturnType<ReturnType<typeof getOctokit>['rest']['actions']['listArtifactsForRepo']>
 >['data']['artifacts'][number];
 
-const getArtifactName = () => `workflow-agent-${getSubjectType()}-${getIssueNumber()}`;
+export const normalizeName = (value: string) =>
+  value.trim().replace(/["<>|:*?\r\n\\\/]+/g, '-');
+
+const getArtifactName = () => {
+  return `workflow-agent-${getSubjectType()}-${getIssueNumber()}-${normalizeName(context.workflow)}-${normalizeName(context.job)}`;
+};
 
 const listArtifactsByName = async (): Promise<RepoArtifact[]> => {
   const { owner, repo } = context.repo;
