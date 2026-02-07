@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run sudden-agent
-        uses: sudden-network/agent@v1
+        uses: sudden-network/agent@develop
         with:
           agent_auth_file: ${{ secrets.CODEX_AUTH_JSON }}
           resume: true

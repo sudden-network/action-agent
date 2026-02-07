@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Version bump via sudden-agent
-        uses: sudden-network/agent@v1
+        uses: sudden-network/agent@develop
         with:
           agent_auth_file: ${{ secrets.CODEX_AUTH_JSON }}
           resume: true
