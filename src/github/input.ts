@@ -8,13 +8,16 @@ export const inputs = {
     return getInput('agent_auth_file') || undefined;
   },
   get githubToken(): string {
-    const token = getInput('github_token') || process.env.GITHUB_TOKEN;
+    const token = getInput('github_token') || inputs.workflowGithubToken;
 
     if (!token) {
-      throw new Error('Missing GitHub token. Set `github_token` input or `GITHUB_TOKEN` env var.');
+      throw new Error('Missing GitHub token. Set `github_token` input or provide the workflow token.');
     }
 
     return token;
+  },
+  get workflowGithubToken(): string | undefined {
+    return getInput('workflow_github_token') || undefined;
   },
   get githubTokenActor(): string | undefined {
     return getInput('github_token_actor') || undefined;

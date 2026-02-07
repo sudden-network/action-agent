@@ -1,4 +1,4 @@
-import { getInput, info, setFailed } from '@actions/core';
+import { setFailed } from '@actions/core';
 import { getAgent } from './agents';
 import { postErrorComment } from './github/comment';
 import { isIssueOrPullRequest } from './github/context';
@@ -9,11 +9,6 @@ import { fetchTrustedCollaborators, ensureWriteAccess } from './github/security'
 
 const main = async () => {
   try {
-    const inputToken = getInput('github_token');
-    const envTokenLength = process.env.GITHUB_TOKEN?.length ?? 0;
-    info(`GITHUB_TOKEN env length: ${envTokenLength}`);
-    info(`github_token input length: ${inputToken.length}`);
-
     const [trustedCollaborators, tokenActor, agent] = await Promise.all([
       fetchTrustedCollaborators(),
       resolveTokenActor(),

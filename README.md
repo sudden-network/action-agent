@@ -29,7 +29,7 @@ This makes iterative work practical: the agent remembers what it already covered
 | `agent` | no | Agent to run (`codex` default). |
 | `agent_api_key` | no | Agent API key. Required unless `agent_auth_file` is set. |
 | `agent_auth_file` | no | Agent auth file content (agent-specific). |
-| `github_token` | no | GitHub token used by the action (defaults to `GITHUB_TOKEN`). |
+| `github_token` | no | GitHub token used by the action (defaults to the workflow token). |
 | `github_token_actor` | no | Actor login for `github_token` when using a non-workflow token (e.g. `sudden-agent[bot]`). |
 | `model` | no | Agent model override (for Codex, append reasoning effort with /, e.g. `gpt-5.3-codex/xhigh`) |
 | `prompt` | no | Additional instructions for the agent. |
@@ -61,7 +61,7 @@ This action relies on the workflow `GITHUB_TOKEN`.
 > Grant only what you need at the job level.
 See GitHub documentation for [permissions](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token).
 
-If you provide a non-workflow token, also set `github_token_actor` so the agent can recognize its own comments. If you omit it, the action assumes `github-actions[bot]`.
+If you provide a non-workflow token, also set `github_token_actor` so the agent can recognize its own comments.
 
 Common permissions:
 - `issues: write` to post issue comments (including PR conversation comments).

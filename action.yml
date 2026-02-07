@@ -16,7 +16,11 @@ inputs:
     required: false
     default: ""
   github_token:
-    description: GitHub token used by the action (defaults to `GITHUB_TOKEN`)
+    description: GitHub token used by the action (defaults to the workflow token)
+    required: false
+    default: ""
+  workflow_github_token:
+    description: Internal-only workflow token (do not set manually)
     required: false
     default: ${{ github.token }}
   github_token_actor:
