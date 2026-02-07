@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Tag and release via workflow-agent
-        uses: sudden-network/workflow-agent@develop
+        uses: sudden-network/workflow-agent@v1
         with:
           agent_auth_file: ${{ secrets.CODEX_AUTH_JSON }}
           prompt: |
