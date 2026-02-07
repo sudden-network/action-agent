@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Version bump via workflow-agent
-        uses: sudden-network/workflow-agent@v1
+        uses: sudden-network/workflow-agent@develop
         with:
           agent_auth_file: ${{ secrets.CODEX_AUTH_JSON }}
           resume: true
