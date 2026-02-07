@@ -53,6 +53,29 @@ Treat `agent_auth_file` like a password (it grants access to the underlying agen
 
 For the default agent (`codex`), `agent_auth_file` can be used to inject Codex's `auth.json` (from `~/.codex/auth.json`) so the CLI can use a ChatGPT subscription.
 
+## GitHub App quick start
+
+Use the Workflow Agent GitHub App when you need capabilities that `GITHUB_TOKEN` cannot provide (for example, updating workflow files or cross-repo changes).
+
+1. Install the Workflow Agent GitHub App on your org or repo.
+2. Store the app credentials as secrets: `WORKFLOW_AGENT_APP_ID` and `WORKFLOW_AGENT_APP_PRIVATE_KEY`.
+3. Mint an installation token in your workflow and pass it to `github_token`.
+
+```yaml
+- uses: actions/create-github-app-token@v1
+  id: app-token
+  with:
+    app-id: ${{ secrets.WORKFLOW_AGENT_APP_ID }}
+    private-key: ${{ secrets.WORKFLOW_AGENT_APP_PRIVATE_KEY }}
+- uses: sudden-network/workflow-agent@vX
+  with:
+    github_token: ${{ steps.app-token.outputs.token }}
+```
+
+If you do not have app credentials, keep using `GITHUB_TOKEN`.
+
+Maintainers can bootstrap the app using `github-app-manifest.json` in this repo.
+
 ## Permissions
 
 This action relies on the workflow `GITHUB_TOKEN`.
