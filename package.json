@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "pnpm typecheck && ncc build src/index.ts -o dist && cp src/PROMPT.md dist/PROMPT.md && cp src/PROMPT_RESUME.md dist/PROMPT_RESUME.md",
-    "test": "jest",
+    "test": "jest && bash scripts/setup-codex-auth-secret.test.sh",
     "prepare": "husky"
   },
   "dependencies": {

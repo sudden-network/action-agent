@@ -10,6 +10,14 @@
         </select>
       </label>
 
+      <label>
+        CODEX_AUTH_JSON scope:
+        <select id="secret-scope">
+          <option value="repo">Repository</option>
+          <option value="org">Organization</option>
+        </select>
+      </label>
+
       <label id="org-field" style="display: none;">
         Org slug:
         <input id="org" placeholder="your-org" required />
@@ -50,6 +58,7 @@
 
       const form = document.getElementById("manifest-form");
       const target = document.getElementById("target");
+      const secretScope = document.getElementById("secret-scope");
       const org = document.getElementById("org");
 
       function updateAction() {
@@ -65,7 +74,24 @@
         }
       }
 
+      function updateManifestPermissions() {
+        try {
+          const manifest = JSON.parse(editor.value);
+          if (secretScope.value === "org") {
+            manifest.default_permissions.organization_secrets = "write";
+          } else {
+            delete manifest.default_permissions.organization_secrets;
+          }
+          const manifestText = JSON.stringify(manifest, null, 2);
+          editor.value = manifestText;
+          document.getElementById("manifest").value = manifestText;
+        } catch {
+          // Keep the user's manifest text so GitHub can report the invalid JSON.
+        }
+      }
+
       target.addEventListener("change", updateAction);
+      secretScope.addEventListener("change", updateManifestPermissions);
       org.addEventListener("input", updateAction);
       window.addEventListener("pageshow", updateAction);
       updateAction();
@@ -76,6 +102,7 @@
       document.getElementById("manifest-editor").value = manifestText;
 
       const editor = document.getElementById("manifest-editor");
+      updateManifestPermissions();
       editor.addEventListener("input", () => {
         document.getElementById("manifest").value = editor.value;
       });
