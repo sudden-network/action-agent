@@ -89,11 +89,17 @@ The helper:
 2. Lists repositories where you have admin access when repository selection is required.
 3. Lets you choose `selected`, `private`, or `all` visibility for an organization secret.
 4. Lets you choose one or more repositories when you select `selected` visibility.
-5. Shows existing visibility, then confirms the resulting access and create or replace action.
-6. Opens a fresh Codex browser login in a temporary `CODEX_HOME`.
-7. Passes `auth.json` to `gh secret set` from a permission-restricted temporary file, then deletes it.
+5. Shows the target, existing visibility, resulting access, and create or replace action.
+6. Asks whether you are on a remote machine.
+7. On a remote machine, prints one macOS command with the exact repository or organization access you selected, then exits.
+8. Otherwise, confirms the action and opens a fresh Codex browser login in a temporary `CODEX_HOME`.
+9. In the local flow, passes `auth.json` to `gh secret set` from a permission-restricted temporary file, then deletes it.
 
 Use the Up and Down arrow keys and press Enter in each single-choice menu. In the selected-repository menu, press Enter to choose one repository. Press Space to select multiple repositories, then press Enter to continue. Press `q` to cancel.
+
+On a remote machine, choose `Yes, show a command for my local Mac`. Copy the printed command and run it on a trusted Mac. The Mac needs Node.js, `pbcopy`, `pbpaste`, and an authenticated GitHub CLI. The command opens the browser login locally, uploads the credential to the selected target, and clears the clipboard after a successful upload. The credential does not pass through the remote machine.
+
+OpenAI recommends [device-code authentication (beta)](https://developers.openai.com/codex/auth) for general headless Codex login. This helper offers a Mac handoff so the dedicated credential goes directly from the trusted local machine to GitHub.
 
 For organization secrets, choose `Selected repositories`, `Private repositories`, or `All repositories`. Repository selection appears only for `Selected repositories`. Prefer selected access unless broader sharing is required. When replacing a secret, review the current and requested access before confirming. A repository secret named `CODEX_AUTH_JSON` takes precedence over an organization secret with the same name.
 
@@ -105,7 +111,7 @@ gh auth refresh --scopes admin:org
 
 Create a fresh login for each repository or organization secret. Do not reuse one generated `auth.json` across separate secrets.
 
-### Manual clipboard setup
+### Manual macOS clipboard setup
 
 Create that separate file locally without touching your normal `~/.codex` login:
 
@@ -116,5 +122,5 @@ curl -fsSL https://raw.githubusercontent.com/sudden-network/agent/main/scripts/b
 The script uses Codex browser login with a fresh temporary `CODEX_HOME` and copies `auth.json` with macOS `pbcopy`. Paste it into `CODEX_AUTH_JSON`, or pipe it from the clipboard:
 
 ```bash
-pbpaste | gh secret set CODEX_AUTH_JSON --repo OWNER/REPOSITORY
+bash -o pipefail -c 'pbpaste | gh secret set CODEX_AUTH_JSON --app actions --repo OWNER/REPOSITORY && pbcopy </dev/null'
 ```

@@ -5,6 +5,7 @@ umask 077
 
 SECRET_NAME="CODEX_AUTH_JSON"
 MENU_WINDOW_SIZE=10
+BOOTSTRAP_URL="https://raw.githubusercontent.com/sudden-network/agent/main/scripts/bootstrap-codex-auth.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap-codex-auth.sh"
 AUTH_DIR=""
@@ -303,6 +304,28 @@ secret_exists() {
   [[ -n "$output" ]]
 }
 
+print_local_mac_command() {
+  local argument
+  local quoted_argument
+
+  echo >&2
+  echo "Run this command on your local Mac:" >&2
+  echo >&2
+  printf "bash -o pipefail -c 'curl -fsSL %s | bash && pbpaste | gh secret set %s --app actions \"\$@\" && pbcopy </dev/null' _" \
+    "$BOOTSTRAP_URL" "$SECRET_NAME" >&2
+  for argument in "${SECRET_ARGS[@]}"; do
+    printf -v quoted_argument '%q' "$argument"
+    printf ' %s' "$quoted_argument" >&2
+  done
+  echo >&2
+  echo >&2
+  echo "Use a trusted Mac with Node.js and an authenticated GitHub CLI." >&2
+  if [[ "${SECRET_ARGS[0]}" == "--org" ]]; then
+    echo "For a GitHub CLI OAuth login, add the admin:org scope." >&2
+  fi
+  echo "The command creates a fresh login, uploads it to the selected secret, and clears the clipboard after success." >&2
+}
+
 select_repository_target() {
   local viewer="$1"
   local organizations_output
@@ -433,8 +456,6 @@ main() {
   local confirmation
 
   require_command gh
-  require_command npx
-  [[ -x "$BOOTSTRAP_SCRIPT" ]] || die "Bootstrap script not found: $BOOTSTRAP_SCRIPT"
 
   if ! viewer="$(gh api user --jq '.login')"; then
     die "GitHub CLI authentication failed. Run 'gh auth login', then rerun."
@@ -466,6 +487,18 @@ main() {
   if [[ "${SECRET_ARGS[0]}" == "--org" ]]; then
     echo "A repository secret with the same name takes precedence over this organization secret." >&2
   fi
+
+  choose "On a remote machine?" \
+    "No, continue on this machine" \
+    "Yes, show a command for my local Mac"
+  if [[ "$SELECTED" == "Yes, show a command for my local Mac" ]]; then
+    print_local_mac_command
+    exit 0
+  fi
+
+  require_command npx
+  [[ -x "$BOOTSTRAP_SCRIPT" ]] || die "Bootstrap script not found: $BOOTSTRAP_SCRIPT"
+
   printf 'Open the Codex login and continue? [y/N] ' >&2
   IFS= read -r confirmation || die "Input closed."
   case "$confirmation" in

@@ -73,7 +73,7 @@ To use Codex with a ChatGPT subscription in GitHub Actions, create and upload a 
 ./scripts/setup-codex-auth-secret.sh
 ```
 
-The helper uses `gh` and arrow-key menus to select a personal repository, an organization repository, or an organization secret. For an organization secret, choose its visibility and any selected repositories. See the [GitHub App setup](github-app/README.md) for prerequisites, manual setup, and workflow configuration.
+The helper uses `gh` and arrow-key menus to select a personal repository, an organization repository, or an organization secret. For an organization secret, choose its visibility and any selected repositories. If you are on a remote machine, the helper prints one macOS command that uploads the credential to the exact target you selected. See the [GitHub App setup](github-app/README.md) for prerequisites, remote setup, manual setup, and workflow configuration.
 
 ## Permissions
 
